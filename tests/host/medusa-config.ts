@@ -23,6 +23,7 @@ const access: AccessControlOptions = {
     ["GET", "/templates", "templates.read"],
     ["POST", "/templates", "templates.write"],
     ["GET", "/templates/:id", "templates.read"],
+    ["GET", "/templates/:id/products", "templates.read"],
     ["POST", "/templates/:id", "templates.write"],
     ["POST", "/templates/:id/versions", "templates.write"],
     ["POST", "/templates/:id/archive", "templates.write"],

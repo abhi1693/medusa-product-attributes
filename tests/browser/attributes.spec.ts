@@ -178,12 +178,18 @@ test("typed values, stale writes and native publication preserve specification r
   await expect(
     page.getByRole("heading", { name: "Specifications", exact: true })
   ).toBeVisible()
-  await page.getByRole("region", { name: "Specifications", exact: true }).getByRole("button", { name: "Edit", exact: true }).click()
+  await page
+    .getByRole("region", { name: "Specifications", exact: true })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click()
   const editor = page.getByRole("dialog")
   await editor.getByLabel("Capacity", { exact: true }).fill("24")
   await editor.getByLabel("Managed", { exact: true }).click()
   await page.getByRole("option", { name: "No", exact: true }).click()
-  await page.screenshot({ path: "test-results/value-editor.png", fullPage: true })
+  await page.screenshot({
+    path: "test-results/value-editor.png",
+    fullPage: true,
+  })
   await editor.getByRole("button", { name: "Save", exact: true }).click()
   await expect(editor).toHaveCount(0)
   await expect(page.getByText("24 Gbps", { exact: true })).toBeVisible()
@@ -256,7 +262,18 @@ test("reader sees templates but cannot change them through the UI or API", async
     data: {
       key: "reader_fixture",
       name: "Reader specifications",
-      fields: [{ key: "model", label: "Model", type: "text", scope: "product", required: false, searchable: false, filterable: false, comparable: true }],
+      fields: [
+        {
+          key: "model",
+          label: "Model",
+          type: "text",
+          scope: "product",
+          required: false,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+      ],
     },
   })
   expect(prepared.ok(), await prepared.text()).toBeTruthy()
@@ -276,4 +293,85 @@ test("reader sees templates but cannot change them through the UI or API", async
   await expect(
     page.getByRole("button", { name: "Create version", exact: true })
   ).toBeDisabled()
+})
+
+test("Store attributes require a published product in the publishable key's channel", async ({
+  request,
+}) => {
+  const headers = await tokenFor(request)
+  const post = async (path: string, data: unknown) => {
+    const response = await request.post(path, { headers, data })
+    expect(response.ok(), `${path}: ${await response.text()}`).toBeTruthy()
+    return response.json()
+  }
+  const { product } = await post("/admin/products", {
+    title: "Store contract fixture",
+    status: "draft",
+    options: [{ title: "Configuration", values: ["Default"] }],
+    variants: [
+      {
+        title: "Default",
+        manage_inventory: false,
+        options: { Configuration: "Default" },
+      },
+    ],
+  })
+  const { template } = await post(`${root}/templates`, {
+    key: "store_contract",
+    name: "Public specifications",
+    fields: [
+      {
+        key: "model",
+        label: "Model",
+        type: "text",
+        scope: "product",
+        required: false,
+        searchable: true,
+        filterable: false,
+        comparable: true,
+      },
+    ],
+  })
+  const state = await (
+    await request.get(`${root}/products/${product.id}`, { headers })
+  ).json()
+  await post(`${root}/products/${product.id}/assignment`, {
+    version: state.version,
+    template_id: template.id,
+    template_version: template.version,
+  })
+  const { sales_channel: channel } = await post("/admin/sales-channels", {
+    name: "Attributes public channel",
+  })
+  await post(`/admin/sales-channels/${channel.id}/products`, {
+    add: [product.id],
+  })
+  const { sales_channel: otherChannel } = await post("/admin/sales-channels", {
+    name: "Other attributes channel",
+  })
+  const { api_key: key } = await post("/admin/api-keys", {
+    title: "Attributes storefront fixture",
+    type: "publishable",
+  })
+  const { api_key: otherKey } = await post("/admin/api-keys", {
+    title: "Other storefront fixture",
+    type: "publishable",
+  })
+  await post(`/admin/api-keys/${key.id}/sales-channels`, { add: [channel.id] })
+  await post(`/admin/api-keys/${otherKey.id}/sales-channels`, {
+    add: [otherChannel.id],
+  })
+  const path = `/store/products/${product.id}/attributes`
+  const correct = { "x-publishable-api-key": key.token }
+  const wrong = { "x-publishable-api-key": otherKey.token }
+  expect((await request.get(path, { headers: correct })).status()).toBe(404)
+  await post(`/admin/products/${product.id}`, { status: "published" })
+  expect((await request.get(path, { headers: wrong })).status()).toBe(404)
+  const visible = await request.get(path, { headers: correct })
+  expect(visible.ok(), await visible.text()).toBeTruthy()
+  const body = await visible.json()
+  expect(body.product_id).toBe(product.id)
+  expect(body.template.key).toBe("store_contract")
+  expect(body.template.fields[0].comparable).toBe(true)
+  expect((await request.get(path)).ok()).toBeFalsy()
 })

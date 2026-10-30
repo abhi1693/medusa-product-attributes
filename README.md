@@ -9,7 +9,7 @@ Typed product specifications and versioned templates for Medusa v2. Define reusa
 
 The plugin owns template definitions. Medusa Product and Product Variant metadata own the values. Your application supplies its categories, brands and authorization policy.
 
-Development preview: the first release has not been published to npm. Build and inspect the package locally before installing it in an application.
+Development preview: the first release has not been published to npm. The [storage design review](docs/storage-decision.md) records a reproduced native workflow concurrency issue that must be resolved before release.
 
 ## Capabilities
 

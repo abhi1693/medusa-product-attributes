@@ -23,11 +23,9 @@ Drafts may be incomplete so editors can work incrementally. Publication requires
 
 Native metadata merging is shallow: replacing the reserved namespace can replace its complete value. Preserve unrelated metadata and validate the whole candidate document. Inspect native direct, batch and import workflows separately before claiming coverage. Direct module calls from trusted scripts remain an explicit application integration boundary.
 
-## Plugin evaluation
+## Design requirements
 
-Before choosing this implementation, public Medusa attribute/template plugins from empty-complete, ipsoftware, NicolasGorga, vholik and CodeMindEC were inspected across current and older implementations. The evaluation covered actual source, storage ownership, native integration, public exports, published artifacts and licenses. No candidate was installed in the merchant application.
-
-The relevant gaps were native metadata ownership, complete template-specific server validation, safe schema evolution, supported Admin integration, optional authorization and verified consuming artifacts on the pinned version. Older Medusa v1 models are not compatible with v2 module isolation. Peer ranges are not runtime compatibility evidence. This repository implements its own public contract using supported framework APIs.
+The implementation requires native metadata ownership, template-specific server validation, safe schema evolution, supported Admin integration, optional authorization and verified consuming artifacts on the pinned version. Medusa v1 model inheritance is not compatible with v2 module isolation. Peer ranges are not runtime compatibility evidence. This repository uses public v2 extension points and a separate consuming host for validation.
 
 ## Required validation evidence
 

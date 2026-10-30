@@ -70,9 +70,10 @@
     "format": "prettier --write src tests scripts *.json *.mts *.ts",
     "format:check": "prettier --check src tests scripts *.json *.mts *.ts",
     "test:publish": "node --test scripts/test-publish-npm.mjs",
+    "test:package": "node --test scripts/test-package.mjs",
     "test:integration": "node scripts/test-integration.mjs",
     "test:e2e": "node scripts/test-browser.mjs",
-    "ci:test": "npm run test:publish && npm test && npm run test:integration && npm run test:e2e",
+    "ci:test": "npm run test:package && npm run test:publish && npm test && npm run test:integration && npm run test:e2e",
     "ci:build": "npm run build && node scripts/package-release.mjs --check-only",
     "pack:local": "npm run build && node scripts/package-local.mjs",
     "release:package": "npm run build && node scripts/package-release.mjs"

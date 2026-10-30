@@ -13,4 +13,5 @@ test-results/
 tests/host/node_modules/
 tests/host/.medusa/
 tests/host/uploads/
+tests/host/package-lock.json
 tests/fixtures/.generated/
