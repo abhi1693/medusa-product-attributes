@@ -6,6 +6,7 @@ import {
   type APIRequestContext,
   type APIResponse,
 } from "@playwright/test"
+import type { AttributeField, StoreProductAttributes } from "../../src/types.js"
 
 const fixture = JSON.parse(
   readFileSync(
@@ -438,31 +439,118 @@ test("Store attributes require a published product in the publishable key's chan
   const { product } = await post("/admin/products", {
     title: "USB-C adapter",
     status: "draft",
-    options: [{ title: "Configuration", values: ["Default"] }],
+    options: [
+      { title: "Finish", values: ["Red", "Blue"] },
+      { title: "Size", values: ["Small", "Large"] },
+    ],
     variants: [
       {
-        title: "Default",
+        title: "Red / Small",
+        sku: "ADAPTER-RED-S",
         manage_inventory: false,
         prices: [],
-        options: { Configuration: "Default" },
+        options: { Finish: "Red", Size: "Small" },
+      },
+      {
+        title: "Blue / Large",
+        sku: "ADAPTER-BLUE-L",
+        manage_inventory: false,
+        prices: [],
+        options: { Finish: "Blue", Size: "Large" },
       },
     ],
   })
+  const redVariant = product.variants.find(
+    (variant: { sku: string }) => variant.sku === "ADAPTER-RED-S"
+  )
+  const blueVariant = product.variants.find(
+    (variant: { sku: string }) => variant.sku === "ADAPTER-BLUE-L"
+  )
+  expect(redVariant).toBeDefined()
+  expect(blueVariant).toBeDefined()
+  expect(redVariant.id).not.toBe(blueVariant.id)
+  const fields: AttributeField[] = [
+    {
+      key: "model",
+      label: "Model",
+      type: "text",
+      scope: "product",
+      required: false,
+      searchable: true,
+      filterable: false,
+      comparable: true,
+    },
+    {
+      key: "standby_power_w",
+      label: "Standby power",
+      type: "number",
+      scope: "product",
+      required: true,
+      unit: "W",
+      min: 0,
+      max: 100,
+      searchable: false,
+      filterable: true,
+      comparable: true,
+    },
+    {
+      key: "managed",
+      label: "Managed",
+      type: "boolean",
+      scope: "product",
+      required: true,
+      searchable: false,
+      filterable: true,
+      comparable: false,
+    },
+    {
+      key: "interfaces",
+      label: "Interfaces",
+      type: "multi_select",
+      scope: "product",
+      required: true,
+      options: [
+        { value: "usb_c", label: "USB-C" },
+        { value: "ethernet", label: "Ethernet" },
+        { value: "wifi", label: "Wi-Fi" },
+      ],
+      searchable: false,
+      filterable: true,
+      comparable: true,
+    },
+    {
+      key: "finish",
+      label: "Finish",
+      type: "single_select",
+      scope: "variant",
+      required: true,
+      options: [
+        { value: "red", label: "Red" },
+        { value: "blue", label: "Blue" },
+      ],
+      searchable: false,
+      filterable: true,
+      comparable: true,
+    },
+    {
+      key: "size",
+      label: "Size",
+      type: "single_select",
+      scope: "variant",
+      required: true,
+      options: [
+        { value: "s", label: "Small" },
+        { value: "l", label: "Large" },
+      ],
+      searchable: false,
+      filterable: true,
+      comparable: true,
+    },
+  ]
   const { template } = await post(`${root}/templates`, {
     key: "adapter_specifications",
     name: "Adapter specifications",
-    fields: [
-      {
-        key: "model",
-        label: "Model",
-        type: "text",
-        scope: "product",
-        required: false,
-        searchable: true,
-        filterable: false,
-        comparable: true,
-      },
-    ],
+    fields,
   })
   const state = await (
     await request.get(`${root}/products/${product.id}`, { headers })
@@ -481,7 +569,21 @@ test("Store attributes require a published product in the publishable key's chan
   })
   await post(`${root}/products/${product.id}/values`, {
     version: historical.version,
-    values: { model: "Reference adapter" },
+    values: {
+      model: "Reference adapter",
+      standby_power_w: 0,
+      managed: false,
+      interfaces: ["usb_c", "ethernet"],
+    },
+    variants: [
+      { id: redVariant.id, values: { finish: "red", size: "s" } },
+      { id: blueVariant.id, values: { finish: "blue", size: "l" } },
+    ].map((variant) => ({
+      ...variant,
+      version: historical.variants.find(
+        (current: { id: string }) => current.id === variant.id
+      ).version,
+    })),
   })
   const [storefront, otherStorefront] = fixture.storefront
   await post(`/admin/sales-channels/${storefront.channel_id}/products`, {
@@ -495,11 +597,29 @@ test("Store attributes require a published product in the publishable key's chan
   expect((await request.get(path, { headers: wrong })).status()).toBe(404)
   const visible = await request.get(path, { headers: correct })
   expect(visible.ok(), await visible.text()).toBeTruthy()
-  const body = await visible.json()
+  const body = (await visible.json()) as StoreProductAttributes
   expect(body.product_id).toBe(product.id)
   expect(body.template.key).toBe("adapter_specifications")
-  expect(body.template.fields[0].comparable).toBe(true)
-  expect(body.values.model).toBe("Reference adapter")
+  expect(body.template.version).toBe(template.version)
+  expect(body.template.fields).toEqual(fields)
+  expect(
+    [...new Set(body.template.fields.map((field) => field.type))].sort()
+  ).toEqual(["boolean", "multi_select", "number", "single_select", "text"])
+  expect(body.values).toEqual({
+    model: "Reference adapter",
+    standby_power_w: 0,
+    managed: false,
+    interfaces: ["usb_c", "ethernet"],
+  })
+  // Distinct native variants retain their own conjunctions; this contract
+  // deliberately does not flatten red/small and blue/large into red/large.
+  expect(body.variants).toHaveLength(2)
+  expect(body.variants).toEqual(
+    expect.arrayContaining([
+      { id: redVariant.id, values: { finish: "red", size: "s" } },
+      { id: blueVariant.id, values: { finish: "blue", size: "l" } },
+    ])
+  )
   expect(JSON.stringify(body)).not.toContain(historyCanary)
   expect((await request.get(path)).ok()).toBeFalsy()
 

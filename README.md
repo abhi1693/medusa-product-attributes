@@ -26,6 +26,8 @@ Development preview: the first release has not been published to npm. Use a revi
 | Extensible authorization | Use Medusa authentication with an application-supplied authorization callback. A particular RBAC package is not required. |
 | Storefront contract | Normalized typed values and search/filter/comparison flags support downstream integrations. Storefront UI and search indexing are separate work. |
 
+The [storefront filtering contract](docs/storefront-filtering.md) explains stable choice codes, numeric units, schema-version interpretation and variant grouping, together with the backend query/index work required before exposing filters or facet counts.
+
 ## Admin preview
 
 Manage reusable schemas from **Settings → Product attributes**, including their current version and source.
