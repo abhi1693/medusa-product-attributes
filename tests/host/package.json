@@ -1,0 +1,56 @@
+{
+  "name": "product-attributes-example",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated Medusa development and compatibility host",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "dev": "medusa develop --host 0.0.0.0",
+    "db:migrate": "medusa db:migrate",
+    "build": "medusa build",
+    "start": "medusa start",
+    "bootstrap": "medusa exec ./src/scripts/bootstrap.ts",
+    "seed:test": "medusa exec ./src/scripts/seed.ts"
+  },
+  "dependencies": {
+    "@abhi1693/medusa-rbac": "0.0.1",
+    "@medusajs/admin-sdk": "2.22.2",
+    "@medusajs/cli": "2.22.2",
+    "@medusajs/draft-order": "2.22.2",
+    "@medusajs/framework": "2.22.2",
+    "@medusajs/icons": "2.22.2",
+    "@medusajs/js-sdk": "2.22.2",
+    "@medusajs/medusa": "2.22.2",
+    "@medusajs/ui": "4.2.9",
+    "@tanstack/react-query": "5.64.2",
+    "@zanreal/medusa-admin-kit": "0.3.1",
+    "@abhi1693/medusa-product-attributes": "file:../../artifacts/abhi1693-medusa-product-attributes-0.0.1.tgz"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.15.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.0",
+    "vite": "7.3.7"
+  },
+  "overrides": {
+    "@zanreal/medusa-admin-kit": {
+      "@medusajs/framework": "$@medusajs/framework",
+      "@medusajs/admin-sdk": "$@medusajs/admin-sdk",
+      "@medusajs/icons": "$@medusajs/icons",
+      "@medusajs/js-sdk": "$@medusajs/js-sdk",
+      "@medusajs/ui": "$@medusajs/ui",
+      "@medusajs/admin-shared": "2.22.2"
+    },
+    "@medusajs/utils@2.22.2": {
+      "@graphql-codegen/core": "6.2.2",
+      "@graphql-codegen/typescript": "6.1.2"
+    }
+  }
+}

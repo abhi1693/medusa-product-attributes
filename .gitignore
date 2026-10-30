@@ -1,0 +1,16 @@
+node_modules
+.medusa/
+coverage/
+*.tgz
+.env*
+!.env.example
+
+.idea/
+.release/
+artifacts/
+playwright-report/
+test-results/
+tests/host/node_modules/
+tests/host/.medusa/
+tests/host/uploads/
+tests/fixtures/.generated/

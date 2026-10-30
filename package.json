@@ -1,0 +1,152 @@
+{
+  "name": "@abhi1693/medusa-product-attributes",
+  "version": "0.0.1",
+  "description": "Typed product specifications and immutable template revisions for Medusa v2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhi1693/medusa-product-attributes.git"
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "files": [
+    ".medusa/server",
+    "README.md",
+    "LICENSE",
+    "docs/assets"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./.medusa/server/src/index.d.ts",
+      "default": "./.medusa/server/src/index.js"
+    },
+    "./config": {
+      "types": "./.medusa/server/src/config.d.ts",
+      "default": "./.medusa/server/src/config.js"
+    },
+    "./types": {
+      "types": "./.medusa/server/src/types.d.ts",
+      "default": "./.medusa/server/src/types.js"
+    },
+    "./validation": {
+      "types": "./.medusa/server/src/validation.d.ts",
+      "default": "./.medusa/server/src/validation.js"
+    },
+    "./service": {
+      "types": "./.medusa/server/src/modules/product-attributes/service.d.ts",
+      "default": "./.medusa/server/src/modules/product-attributes/service.js"
+    },
+    "./modules/product-attributes": {
+      "types": "./.medusa/server/src/modules/product-attributes/index.d.ts",
+      "default": "./.medusa/server/src/modules/product-attributes/index.js"
+    },
+    "./workflows": {
+      "types": "./.medusa/server/src/workflows/index.d.ts",
+      "default": "./.medusa/server/src/workflows/index.js"
+    },
+    "./sync-templates": {
+      "types": "./.medusa/server/src/scripts/sync-templates.d.ts",
+      "default": "./.medusa/server/src/scripts/sync-templates.js"
+    },
+    "./client": {
+      "types": "./.medusa/server/src/client.d.ts",
+      "import": "./.medusa/server/public/client.mjs",
+      "require": "./.medusa/server/src/client.js"
+    },
+    "./admin": {
+      "import": "./.medusa/server/src/admin/index.mjs",
+      "require": "./.medusa/server/src/admin/index.js"
+    },
+    "./.medusa/server/src/modules/*": "./.medusa/server/src/modules/*/index.js"
+  },
+  "scripts": {
+    "dev": "medusa plugin:develop",
+    "build": "node scripts/clean-build.mjs && medusa plugin:build && node scripts/build-public.mjs",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.test.json",
+    "test": "vitest run --coverage",
+    "format": "prettier --write src tests scripts *.json *.mts *.ts",
+    "format:check": "prettier --check src tests scripts *.json *.mts *.ts",
+    "test:publish": "node --test scripts/test-publish-npm.mjs",
+    "test:integration": "node scripts/test-integration.mjs",
+    "test:e2e": "node scripts/test-browser.mjs",
+    "ci:test": "npm run test:publish && npm test && npm run test:integration && npm run test:e2e",
+    "ci:build": "npm run build && node scripts/package-release.mjs --check-only",
+    "pack:local": "npm run build && node scripts/package-local.mjs",
+    "release:package": "npm run build && node scripts/package-release.mjs"
+  },
+  "peerDependencies": {
+    "@medusajs/dashboard": "^2.22.2",
+    "@medusajs/admin-sdk": "^2.22.2",
+    "@medusajs/framework": "^2.22.2",
+    "@medusajs/icons": "^2.22.2",
+    "@medusajs/js-sdk": "^2.22.2",
+    "@medusajs/medusa": "^2.22.2",
+    "@medusajs/ui": "^4.2.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@tanstack/react-query": "^5.64.2"
+  },
+  "devDependencies": {
+    "@medusajs/dashboard": "2.22.2",
+    "@playwright/test": "1.64.1",
+    "@swc/core": "^1.15.0",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.8",
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitest/coverage-v8": "4.1.12",
+    "jsdom": "30.1.3",
+    "prettier": "3.9.10",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "7.3.7",
+    "vitest": "4.1.12",
+    "@medusajs/admin-sdk": "2.22.2",
+    "@medusajs/cli": "2.22.2",
+    "@medusajs/draft-order": "2.22.2",
+    "@medusajs/framework": "2.22.2",
+    "@medusajs/icons": "2.22.2",
+    "@medusajs/js-sdk": "2.22.2",
+    "@medusajs/medusa": "2.22.2",
+    "@medusajs/ui": "4.2.9",
+    "@tanstack/react-query": "5.64.2",
+    "esbuild": "0.28.2"
+  },
+  "homepage": "https://github.com/abhi1693/medusa-product-attributes#readme",
+  "bugs": {
+    "url": "https://github.com/abhi1693/medusa-product-attributes/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/abhi1693"
+  },
+  "keywords": [
+    "medusa",
+    "medusa-v2",
+    "medusa-plugin",
+    "product-attributes",
+    "specifications",
+    "templates",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "overrides": {
+    "@medusajs/utils@2.22.2": {
+      "@graphql-codegen/core": "6.2.2",
+      "@graphql-codegen/typescript": "6.1.2"
+    }
+  },
+  "author": "Abhimanyu Saharan",
+  "packageManager": "npm@11.19.0"
+}

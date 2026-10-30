@@ -1,0 +1,14 @@
+.git
+node_modules
+**/node_modules
+.medusa
+**/.medusa
+artifacts
+.release
+coverage
+test-results
+playwright-report
+.env*
+**/.env*
+*.tgz
+.idea

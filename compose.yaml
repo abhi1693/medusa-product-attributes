@@ -1,0 +1,121 @@
+name: medusa-product-attributes
+
+x-source: &source
+  - .:/plugin
+  - root_dependencies:/plugin/node_modules
+  - host_dependencies:/plugin/tests/host/node_modules
+  - plugin_build:/plugin/.medusa
+  - artifacts:/plugin/artifacts
+
+x-host: &host
+  image: medusa-product-attributes:dev
+  build:
+    context: .
+    target: development
+  init: true
+  working_dir: /plugin/tests/host
+  volumes: *source
+  environment:
+    NODE_ENV: development
+    MEDUSA_DISABLE_TELEMETRY: "true"
+    DATABASE_URL: postgres://attributes:attributes_local_only@postgres:5432/attributes
+    REDIS_URL: redis://redis:6379
+    JWT_SECRET: ${JWT_SECRET:-}
+    COOKIE_SECRET: ${COOKIE_SECRET:-}
+    PORT: "9000"
+    ATTRIBUTES_HMR_PORT: ${ATTRIBUTES_HMR_PORT:-15174}
+
+services:
+  tooling:
+    image: medusa-product-attributes:tooling
+    build:
+      context: .
+      target: tooling
+    profiles: [tools]
+    init: true
+    working_dir: /plugin
+    volumes: *source
+    command: ["bash"]
+  plugin-build:
+    <<: *host
+    working_dir: /plugin
+    restart: "no"
+    command: ["npm", "run", "pack:local"]
+  host-dependencies:
+    <<: *host
+    restart: "no"
+    command:
+      [
+        "sh",
+        "-ec",
+        "npm install --package-lock-only --ignore-scripts --no-audit --no-fund && npm ci --no-audit --no-fund",
+      ]
+    depends_on:
+      plugin-build:
+        condition: service_completed_successfully
+  migrate:
+    <<: *host
+    restart: "no"
+    command: ["npm", "run", "db:migrate"]
+    depends_on:
+      host-dependencies:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  dev:
+    <<: *host
+    command: ["npm", "run", "dev"]
+    ports:
+      - "127.0.0.1:${ATTRIBUTES_BACKEND_PORT:-19001}:9000"
+      - "127.0.0.1:${ATTRIBUTES_HMR_PORT:-15174}:${ATTRIBUTES_HMR_PORT:-15174}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:9000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
+  cli:
+    <<: *host
+    profiles: [tools]
+    command: ["bash"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: attributes
+      POSTGRES_PASSWORD: attributes_local_only
+      POSTGRES_DB: attributes
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attributes -d attributes"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  root_dependencies:
+  host_dependencies:
+  plugin_build:
+  artifacts:
+  postgres_data:

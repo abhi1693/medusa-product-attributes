@@ -1,0 +1,8 @@
+node_modules
+.medusa
+artifacts
+.release
+coverage
+test-results
+playwright-report
+tests/host/package-lock.json
