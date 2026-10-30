@@ -9,7 +9,7 @@ Typed product specifications and versioned templates for Medusa v2. Define reusa
 
 The plugin owns template definitions and immutable specification revisions linked to native Medusa Products and Variants. Your application supplies its categories, brands and authorization policy. Native metadata can be an optional derived export.
 
-Development preview: the first release has not been published to npm. The [accepted storage design](docs/storage-decision.md) preserves specification edits independently of native Product rollback. Native consuming-package and browser validation must finish before release.
+Development preview: the first release has not been published to npm. Use a reviewed source revision or built archive for evaluation. The [storage design](docs/storage-decision.md) preserves specification edits independently of native Product rollback.
 
 ## Capabilities
 
@@ -23,6 +23,20 @@ Development preview: the first release has not been published to npm. The [accep
 | Application configuration | Declare templates in code or create them in Admin. Merchant-specific definitions remain outside the plugin. |
 | Extensible authorization | Use Medusa authentication with an application-supplied authorization callback. A particular RBAC package is not required. |
 | Storefront contract | Normalized typed values and search/filter/comparison flags support downstream integrations. Storefront UI and search indexing are separate work. |
+
+## Admin preview
+
+Manage reusable schemas from **Settings → Product attributes**, including their current version and source.
+
+![Product attributes settings with searchable, versioned templates](docs/assets/template-list.png)
+
+Edit specifications alongside native product information. Typed controls preserve units, multiple selections and the distinction between unset values, zero and No. Saved values appear in the [Specifications widget](docs/assets/product-specifications-card.png).
+
+![Native specification editor with text, numeric, boolean and multiple-choice fields](docs/assets/value-editor.png)
+
+Review products using earlier schema versions before explicitly adopting an update.
+
+![Template details showing a product pinned to an earlier schema version](docs/assets/template-impact.png)
 
 ## Development
 

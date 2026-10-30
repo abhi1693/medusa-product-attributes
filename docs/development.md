@@ -65,3 +65,9 @@ Integration and browser runners create a random disposable database on the isola
 Vitest requires 100% statements, branches, functions and lines per custom source file, excluding generated migrations. Browser validation covers the native login, template authoring, product and variant specifications, denied writes, schema evolution, stale writes and adjacent native pages. Review screenshots in `test-results/`, traces/HTML reports and server logs in `artifacts/` when investigating a failure. Retain reports before removing the test container.
 
 The hosted CI uses Docker Compose for application execution and reuses `abhi1693/actions` for shared checks. A passing local run does not certify a later commit, hosted CI or a production deployment. Recheck the final pushed head.
+
+## Validated preview checkpoint
+
+The [2026-10-30 CI checkpoint](https://github.com/abhi1693/medusa-product-attributes/actions/runs/41100806820) validates implementation commit `bb8e41bfbf2250124f6aefc5b1e9cceddb72fcd9` with a clean packed consuming installation, native server/Admin build, all 22 public export targets, 133 unit/component tests at 100% per-file coverage, native PostgreSQL integration and five browser journeys.
+
+Native regression checks cover specification survival after unrelated native compensation, atomic initialization, failed partial link creation and retry, native delete/restore, current-pointer conflicts, metadata-export isolation and configured-template synchronization. Subsequent local browser validation also covers all five field types and six raw native Admin/Store relation-disclosure probes. The images in the README come from those real native Admin journeys. Application acceptance and npm publication remain separate gates.

@@ -31,6 +31,7 @@ const access: AccessControlOptions = {
     ["POST", "/products/:id/values", "values.write"],
     ["POST", "/products/:id/assignment", "values.write"],
     ["POST", "/products/:id/validate", "values.read"],
+    ["POST", "/products/:id/export", "values.write"],
   ].map(([method, path, action]) => ({
     method,
     path: `/admin/product-attributes${path}`,

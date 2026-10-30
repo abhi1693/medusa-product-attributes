@@ -19,13 +19,13 @@ The accepted design keeps product and variant specification values in immutable 
 
 Store readers receive only complete current revisions for published, channel-eligible native products and current native variants. There is no implicit last-published fallback. Storefront values and optional metadata exports must be safe for public disclosure. Search/filter/comparison flags describe downstream indexing and presentation; they are not confidentiality controls or a search engine implementation.
 
-Drafts may be incomplete so editors can work incrementally. Publication requires complete applicable values. A publication gate checks specifications; it does not implement editorial review, approval, immutable content revisions or a publishing scheduler.
+Drafts may be incomplete so editors can work incrementally. Publication requires complete applicable values. A publication gate checks specifications; editorial review, approval and scheduling remain application concerns.
 
 Native workflow compensation can restore an older full metadata snapshot after a separate successful metadata write. Real interleaving proved this; see the [storage decision](storage-decision.md). Module-owned revisions avoid that loss. Any optional metadata export must preserve unrelated metadata and must not make projection failure roll back authoritative revisions. Inspect native direct, batch and import workflows separately before claiming coverage. Direct module calls from trusted scripts remain an explicit application integration boundary.
 
 ## Design requirements
 
-The implementation requires native metadata ownership, template-specific server validation, safe schema evolution, supported Admin integration, optional authorization and verified consuming artifacts on the pinned version. Medusa v1 model inheritance is not compatible with v2 module isolation. Peer ranges are not runtime compatibility evidence. This repository uses public v2 extension points and a separate consuming host for validation.
+The implementation requires module-owned immutable specification revisions, public native module links, template-specific server validation, safe schema evolution, supported Admin integration, optional authorization and verified consuming artifacts on the pinned version. Medusa v1 model inheritance is not compatible with v2 module isolation. Peer ranges are not runtime compatibility evidence. This repository uses public v2 extension points and a separate consuming host for validation.
 
 ## Required validation evidence
 

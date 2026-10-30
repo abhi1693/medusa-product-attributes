@@ -4,6 +4,7 @@ import {
   test,
   type Page,
   type APIRequestContext,
+  type APIResponse,
 } from "@playwright/test"
 
 const fixture = JSON.parse(
@@ -35,6 +36,36 @@ const tokenFor = async (request: APIRequestContext, name = "administrator") => {
   expect(response.ok(), await response.text()).toBeTruthy()
   return { Authorization: `Bearer ${(await response.json()).token}` }
 }
+const expectPrivateSpecificationDataAbsent = async (
+  response: APIResponse,
+  historyCanary: string
+) => {
+  expect([200, 400, 403], await response.text()).toContain(response.status())
+  const body: unknown = await response.json()
+  const privateKeys = new Set([
+    "product_specification",
+    "product_specification_link",
+    "product_specification_variant",
+    "product_specification_variant_link",
+    "current_revision",
+    "revisions",
+    "actor_id",
+  ])
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+    } else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) {
+        expect(privateKeys.has(key), `Private JSON property: ${key}`).toBe(
+          false
+        )
+        visit(child)
+      }
+    }
+  }
+  visit(body)
+  expect(JSON.stringify(body)).not.toContain(historyCanary)
+}
 
 test("create and revise a template through native Admin controls", async ({
   page,
@@ -50,8 +81,11 @@ test("create and revise a template through native Admin controls", async ({
     .getByRole("button", { name: "Create template", exact: true })
     .click()
   const dialog = page.getByRole("dialog")
-  await dialog.getByLabel("Name", { exact: true }).fill("Browser specification")
-  await dialog.getByLabel("Key", { exact: true }).fill("browser_specification")
+  await dialog.getByLabel("Name", { exact: true }).fill("Device specifications")
+  await dialog.getByLabel("Key", { exact: true }).fill("device_specifications")
+  await dialog
+    .getByLabel("Description", { exact: false })
+    .fill("Typed hardware properties shared across a product range.")
   await dialog.getByLabel("Label", { exact: true }).fill("Model identifier")
   await dialog.getByLabel("Field key", { exact: true }).fill("model_identifier")
   await dialog.getByRole("checkbox", { name: "Required", exact: true }).check()
@@ -62,29 +96,55 @@ test("create and revise a template through native Admin controls", async ({
     path: "test-results/template-editor.png",
     fullPage: true,
   })
+  await dialog.getByRole("button", { name: "Add field", exact: true }).click()
+  const numberField = dialog.getByRole("group", { name: /^Field 2/ })
+  await numberField.getByLabel("Label", { exact: true }).fill("Link capacity")
+  await numberField
+    .getByLabel("Field key", { exact: true })
+    .fill("link_capacity")
+  await numberField.getByLabel("Type", { exact: true }).click()
+  await page.getByRole("option", { name: "Number", exact: true }).click()
+  await numberField.getByLabel("Unit", { exact: true }).fill("Gbps")
+  await numberField.getByLabel("Minimum", { exact: true }).fill("1")
+  await numberField.getByLabel("Maximum", { exact: true }).fill("100")
+  await numberField
+    .getByRole("checkbox", { name: "Filterable", exact: true })
+    .check()
+  await numberField
+    .getByRole("checkbox", { name: "Comparable", exact: true })
+    .check()
+  await numberField
+    .getByLabel("Minimum", { exact: true })
+    .scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: "test-results/template-editor-number.png",
+    fullPage: true,
+  })
   await dialog
     .getByRole("button", { name: "Create template", exact: true })
     .click()
   await expect(dialog).toHaveCount(0)
-  await page.getByRole("link", { name: /Browser specification/ }).click()
+  await page.getByRole("link", { name: /Device specifications/ }).click()
   await expect(
-    page.getByRole("heading", { name: "Browser specification", exact: true })
+    page.getByRole("heading", { name: "Device specifications", exact: true })
   ).toBeVisible()
   await page
     .getByRole("button", { name: "Create version", exact: true })
     .click()
   await dialog
     .getByLabel("Description", { exact: false })
-    .fill("Revised description")
+    .fill(
+      "Shared model identifiers and connection capacity for network devices."
+    )
   await dialog
     .getByRole("button", { name: "Create version", exact: true })
     .click()
   await expect(dialog).toHaveCount(0)
   await expect(
-    page.getByText("browser_specification · Version 2", { exact: true })
+    page.getByText("device_specifications · Version 2", { exact: true })
   ).toBeVisible()
   await expect(
-    page.getByText("Version 1 · Fields: 1", { exact: true })
+    page.getByText("Version 1 · Fields: 2", { exact: true })
   ).toBeVisible()
   await page.screenshot({
     path: "test-results/template-detail.png",
@@ -106,12 +166,29 @@ test("typed values, stale writes and native publication preserve specification r
   request,
 }) => {
   const headers = await tokenFor(request)
+  const named = await request.post(`/admin/products/${fixture.product.id}`, {
+    headers,
+    data: { title: "Network switch" },
+  })
+  expect(named.ok(), await named.text()).toBeTruthy()
   const created = await request.post(`${root}/templates`, {
     headers,
     data: {
-      key: "typed_browser",
-      name: "Typed specifications",
+      key: "network_equipment",
+      name: "Network equipment",
+      description:
+        "Model, performance and connection options for networking products.",
       fields: [
+        {
+          key: "model_identifier",
+          label: "Model identifier",
+          type: "text",
+          scope: "product",
+          required: true,
+          searchable: true,
+          filterable: false,
+          comparable: true,
+        },
         {
           key: "capacity",
           label: "Capacity",
@@ -132,6 +209,21 @@ test("typed values, stale writes and native publication preserve specification r
           scope: "product",
           required: false,
           searchable: false,
+          filterable: true,
+          comparable: true,
+        },
+        {
+          key: "interfaces",
+          label: "Interfaces",
+          type: "multi_select",
+          scope: "product",
+          required: false,
+          options: [
+            { value: "ethernet", label: "Ethernet" },
+            { value: "usb_c", label: "USB-C" },
+            { value: "sfp_plus", label: "SFP+" },
+          ],
+          searchable: true,
           filterable: true,
           comparable: true,
         },
@@ -184,9 +276,14 @@ test("typed values, stale writes and native publication preserve specification r
     .getByRole("button", { name: "Edit", exact: true })
     .click()
   const editor = page.getByRole("dialog")
+  await editor.getByLabel("Model identifier", { exact: true }).fill("NX-240")
   await editor.getByLabel("Capacity", { exact: true }).fill("24")
   await editor.getByLabel("Managed", { exact: true }).click()
   await page.getByRole("option", { name: "No", exact: true }).click()
+  await editor.getByLabel("Interfaces", { exact: true }).click()
+  await page.getByRole("option", { name: "Ethernet", exact: true }).click()
+  await page.getByRole("option", { name: "SFP+", exact: true }).click()
+  await editor.getByLabel("Model identifier", { exact: true }).click()
   await page.screenshot({
     path: "test-results/value-editor.png",
     fullPage: true,
@@ -194,10 +291,6 @@ test("typed values, stale writes and native publication preserve specification r
   await editor.getByRole("button", { name: "Save", exact: true }).click()
   await expect(editor).toHaveCount(0)
   await expect(page.getByText("24 Gbps", { exact: true })).toBeVisible()
-  await page.screenshot({
-    path: "test-results/product-specifications.png",
-    fullPage: true,
-  })
   const current = await (
     await request.get(`${root}/products/${fixture.product.id}`, { headers })
   ).json()
@@ -207,7 +300,12 @@ test("typed values, stale writes and native publication preserve specification r
       headers,
       data: {
         version: current.version,
-        values: { capacity: 24, managed: false },
+        values: {
+          model_identifier: "NX-240",
+          capacity: 24,
+          managed: false,
+          interfaces: ["ethernet", "sfp_plus"],
+        },
         variants: current.variants.map(
           (variant: { id: string; version: string }) => ({
             id: variant.id,
@@ -240,6 +338,16 @@ test("typed values, stale writes and native publication preserve specification r
   )
   await page.reload()
   await expect(page.getByText("24 Gbps", { exact: true })).toBeVisible()
+  await expect(page.getByText("Ethernet, SFP+", { exact: true })).toBeVisible()
+  await page.screenshot({
+    path: "test-results/product-specifications.png",
+    fullPage: true,
+  })
+  await page
+    .getByRole("region", { name: "Specifications", exact: true })
+    .screenshot({
+      path: "test-results/product-specifications-card.png",
+    })
   await page.goto(
     `/app/products/${fixture.product.id}/variants/${fixture.product.variants[0].id}`
   )
@@ -255,8 +363,15 @@ test("typed values, stale writes and native publication preserve specification r
   await variantEditor.getByRole("button", { name: "Save", exact: true }).click()
   await expect(variantEditor).toHaveCount(0)
   await expect(variantRegion.getByText("Black", { exact: true })).toBeVisible()
+  await page.screenshot({
+    path: "test-results/variant-specifications.png",
+    fullPage: true,
+  })
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.evaluate(() => document.documentElement.classList.add("dark"))
+  await page.emulateMedia({ colorScheme: "dark" })
+  await page.reload()
+  await expect(page.locator("html")).toHaveClass(/dark/)
+  await expect(variantRegion.getByText("Black", { exact: true })).toBeVisible()
   await page.screenshot({
     path: "test-results/specifications-mobile-dark.png",
     fullPage: true,
@@ -276,8 +391,8 @@ test("reader sees templates but cannot change them through the UI or API", async
   const prepared = await request.post(`${root}/templates`, {
     headers: administrator,
     data: {
-      key: "reader_fixture",
-      name: "Reader specifications",
+      key: "catalog_specifications",
+      name: "Catalog specifications",
       fields: [
         {
           key: "model",
@@ -305,7 +420,7 @@ test("reader sees templates but cannot change them through the UI or API", async
     page.getByRole("button", { name: "Create template", exact: true })
   ).toBeDisabled()
   await expect(page.getByText(/Read-only access/)).toBeVisible()
-  await page.getByRole("link", { name: /Reader specifications/ }).click()
+  await page.getByRole("link", { name: /Catalog specifications/ }).click()
   await expect(
     page.getByRole("button", { name: "Create version", exact: true })
   ).toBeDisabled()
@@ -321,7 +436,7 @@ test("Store attributes require a published product in the publishable key's chan
     return response.json()
   }
   const { product } = await post("/admin/products", {
-    title: "Store contract fixture",
+    title: "USB-C adapter",
     status: "draft",
     options: [{ title: "Configuration", values: ["Default"] }],
     variants: [
@@ -334,8 +449,8 @@ test("Store attributes require a published product in the publishable key's chan
     ],
   })
   const { template } = await post(`${root}/templates`, {
-    key: "store_contract",
-    name: "Public specifications",
+    key: "adapter_specifications",
+    name: "Adapter specifications",
     fields: [
       {
         key: "model",
@@ -352,10 +467,21 @@ test("Store attributes require a published product in the publishable key's chan
   const state = await (
     await request.get(`${root}/products/${product.id}`, { headers })
   ).json()
-  await post(`${root}/products/${product.id}/assignment`, {
+  const assigned = await post(`${root}/products/${product.id}/assignment`, {
     version: state.version,
     template_id: template.id,
     template_version: template.version,
+  })
+  // This value exists only in immutable specification history. It is absent
+  // from native commerce fields and every relation-probe request below.
+  const historyCanary = `private_specification_history_${product.id}`
+  const historical = await post(`${root}/products/${product.id}/values`, {
+    version: assigned.version,
+    values: { model: historyCanary },
+  })
+  await post(`${root}/products/${product.id}/values`, {
+    version: historical.version,
+    values: { model: "Reference adapter" },
   })
   const [storefront, otherStorefront] = fixture.storefront
   await post(`/admin/sales-channels/${storefront.channel_id}/products`, {
@@ -371,9 +497,78 @@ test("Store attributes require a published product in the publishable key's chan
   expect(visible.ok(), await visible.text()).toBeTruthy()
   const body = await visible.json()
   expect(body.product_id).toBe(product.id)
-  expect(body.template.key).toBe("store_contract")
+  expect(body.template.key).toBe("adapter_specifications")
   expect(body.template.fields[0].comparable).toBe(true)
+  expect(body.values.model).toBe("Reference adapter")
+  expect(JSON.stringify(body)).not.toContain(historyCanary)
   expect((await request.get(path)).ok()).toBeFalsy()
+
+  const productFields = [
+    "id",
+    "title",
+    "product_specification.current_revision.values",
+    "product_specification.current_revision.actor_id",
+    "product_specification.revisions.values",
+    "product_specification.revisions.actor_id",
+    "variants.product_specification_variant.specification.revisions.values",
+    "variants.product_specification_variant.specification.current_revision.actor_id",
+    "product_specification_link.*",
+  ].join(",")
+  const variantFields = [
+    "id",
+    "sku",
+    "product_specification_variant.specification.current_revision.values",
+    "product_specification_variant.specification.revisions.actor_id",
+    "product_specification_variant_link.*",
+    "product.product_specification.revisions.values",
+  ].join(",")
+  const probes: Array<{
+    path: string
+    headers: Record<string, string>
+    params: Record<string, string>
+  }> = [
+    {
+      path: `/admin/products/${product.id}`,
+      headers,
+      params: { fields: productFields },
+    },
+    {
+      path: "/admin/products",
+      headers,
+      params: { id: product.id, fields: productFields },
+    },
+    {
+      path: `/admin/products/${product.id}/variants`,
+      headers,
+      params: { fields: variantFields },
+    },
+    {
+      path: `/admin/products/${product.id}/variants/${product.variants[0].id}`,
+      headers,
+      params: { fields: variantFields },
+    },
+    {
+      path: `/store/products/${product.id}`,
+      headers: correct,
+      params: { fields: productFields },
+    },
+    {
+      path: "/store/products",
+      headers: correct,
+      params: { id: product.id, fields: productFields },
+    },
+  ]
+  for (const probe of probes) {
+    await test.step(`Native relation privacy: ${probe.path}`, async () => {
+      const response = await request.get(probe.path, {
+        headers: probe.headers,
+        params: probe.params,
+      })
+      // Native validators may strip a denied projection or reject the query.
+      // Inspect property names recursively; an error can echo requested paths.
+      await expectPrivateSpecificationDataAbsent(response, historyCanary)
+    })
+  }
 })
 
 test("template impact lists products pinned to earlier schema versions", async ({
@@ -387,7 +582,7 @@ test("template impact lists products pinned to earlier schema versions", async (
     return response.json()
   }
   const { product } = await post("/admin/products", {
-    title: "Template impact fixture",
+    title: "Compact network adapter",
     status: "draft",
     options: [{ title: "Configuration", values: ["Default"] }],
     variants: [
@@ -400,8 +595,8 @@ test("template impact lists products pinned to earlier schema versions", async (
     ],
   })
   const definition = {
-    key: "impact_fixture",
-    name: "Impact specifications",
+    key: "accessory_specifications",
+    name: "Accessory specifications",
     fields: [
       {
         key: "model",
@@ -427,7 +622,7 @@ test("template impact lists products pinned to earlier schema versions", async (
   await post(`${root}/templates/${template.id}`, {
     ...definition,
     version: 1,
-    description: "New immutable version",
+    description: "Shared model identifiers for compact network accessories.",
   })
   await login(page)
   await page.goto(`${route}/${template.id}`)
@@ -436,7 +631,7 @@ test("template impact lists products pinned to earlier schema versions", async (
     exact: true,
   })
   await expect(
-    region.getByRole("link", { name: /Template impact fixture/ })
+    region.getByRole("link", { name: /Compact network adapter/ })
   ).toBeVisible()
   await expect(region.getByText("Version 1", { exact: true })).toBeVisible()
   await expect(region.getByText("Version 2", { exact: true })).toBeVisible()
@@ -448,6 +643,18 @@ test("template impact lists products pinned to earlier schema versions", async (
   ).toBeVisible()
   await page.screenshot({
     path: "test-results/template-impact.png",
+    fullPage: true,
+  })
+  await region.screenshot({ path: "test-results/template-impact-card.png" })
+  await page.goto(route)
+  await expect(
+    page.getByRole("link", { name: /Accessory specifications/ })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: /Network equipment/ })
+  ).toBeVisible()
+  await page.screenshot({
+    path: "test-results/template-list.png",
     fullPage: true,
   })
 })

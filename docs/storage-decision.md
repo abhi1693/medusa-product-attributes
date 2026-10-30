@@ -1,6 +1,6 @@
 # Specification storage decision
 
-Status: **accepted on 2026-10-30**. Use module-owned versioned specifications linked to native Products/Variants, with validated current storefront snapshots. Native metadata is an optional export. Implementation and regression validation are in progress; do not publish the metadata-backed preview.
+Status: **accepted and implemented on 2026-10-30**. Use module-owned versioned specifications linked to native Products/Variants, with validated current storefront snapshots. Native metadata is an optional export. The packed consuming application's native integration and browser checks pass; the first release remains pending application evaluation.
 
 ## Reproduced behavior
 
