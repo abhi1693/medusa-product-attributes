@@ -9,6 +9,8 @@ Typed product specifications and versioned templates for Medusa v2. Define reusa
 
 The plugin owns template definitions and immutable specification revisions linked to native Medusa Products and Variants. Your application supplies its categories, brands and authorization policy. Native metadata can be an optional derived export.
 
+Medusa's built-in Attributes fields continue to hold dimensions, weight and customs information. This plugin adds merchant-defined technical specifications such as interface types, port counts and power budgets, with reusable templates and typed validation. Native product options continue to define purchasable variant choices.
+
 Development preview: the first release has not been published to npm. Use a reviewed source revision or built archive for evaluation. The [storage design](docs/storage-decision.md) preserves specification edits independently of native Product rollback.
 
 ## Capabilities
@@ -27,6 +29,8 @@ Development preview: the first release has not been published to npm. Use a revi
 ## Admin preview
 
 Manage reusable schemas from **Settings → Product attributes**, including their current version and source.
+
+Widget placement uses Medusa's native **Customize page** layouts. Save a shared default or a personal arrangement, including placement beneath the native Attributes card.
 
 ![Product attributes settings with searchable, versioned templates](docs/assets/template-list.png)
 
