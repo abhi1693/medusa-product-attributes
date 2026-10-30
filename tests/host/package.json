@@ -15,7 +15,7 @@
     "seed:test": "medusa exec ./src/scripts/seed.ts"
   },
   "dependencies": {
-    "@abhi1693/medusa-rbac": "git+https://github.com/abhi1693/medusa-rbac.git#721fc2636ec4373a171eedd7d1b1e740f05c3328",
+    "@abhi1693/medusa-rbac": "git+https://github.com/abhi1693/medusa-rbac.git#98cbe1bd6fd02b8105d0ede6e8e8386c66e4b51d",
     "@medusajs/admin-sdk": "2.22.2",
     "@medusajs/cli": "2.22.2",
     "@medusajs/draft-order": "2.22.2",
@@ -54,6 +54,6 @@
     }
   },
   "allowScripts": {
-    "github:abhi1693/medusa-rbac#721fc2636ec4373a171eedd7d1b1e740f05c3328": true
+    "github:abhi1693/medusa-rbac#98cbe1bd6fd02b8105d0ede6e8e8386c66e4b51d": true
   }
 }

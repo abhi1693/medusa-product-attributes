@@ -4,6 +4,7 @@ import { ACCESS_CONTROL } from "@abhi1693/medusa-rbac/modules/access-control"
 import type AccessControlService from "@abhi1693/medusa-rbac/service"
 import type { ProductAttributesOptions } from "@abhi1693/medusa-product-attributes/types"
 import type { AccessControlOptions } from "@abhi1693/medusa-rbac/config"
+import { commandProfile, defineResource } from "@abhi1693/medusa-rbac/resources"
 
 const actions = [
   "templates.read",
@@ -19,24 +20,53 @@ const access: AccessControlOptions = {
     `${action.split(".")[1]} ${action.split(".")[0]}`,
     "Product attributes",
   ]),
-  routes: [
-    ["GET", "/templates", "templates.read"],
-    ["POST", "/templates", "templates.write"],
-    ["GET", "/templates/:id", "templates.read"],
-    ["GET", "/templates/:id/products", "templates.read"],
-    ["POST", "/templates/:id", "templates.write"],
-    ["POST", "/templates/:id/versions", "templates.write"],
-    ["POST", "/templates/:id/archive", "templates.write"],
-    ["GET", "/products/:id", "values.read"],
-    ["POST", "/products/:id/values", "values.write"],
-    ["POST", "/products/:id/assignment", "values.write"],
-    ["POST", "/products/:id/validate", "values.read"],
-    ["POST", "/products/:id/export", "values.write"],
-  ].map(([method, path, action]) => ({
-    method,
-    path: `/admin/product-attributes${path}`,
-    permissions: [permission(action)],
-  })),
+  resources: [
+    defineResource({
+      key: "product-attributes",
+      root: "product-attributes",
+      actorTypes: ["user"],
+      operations: {
+        templates_read: { permissions: [permission("templates.read")] },
+        templates_write: { permissions: [permission("templates.write")] },
+        values_read: { permissions: [permission("values.read")] },
+        values_write: { permissions: [permission("values.write")] },
+        values_export: {
+          permissions: [permission("values.read"), permission("values.write")],
+        },
+      },
+      profile: {
+        children: {
+          templates: {
+            actions: { GET: "templates_read", POST: "templates_write" },
+            item: {
+              parameter: "id",
+              profile: {
+                actions: { GET: "templates_read", POST: "templates_write" },
+                children: {
+                  archive: commandProfile("templates_write"),
+                  products: commandProfile("templates_read", "GET"),
+                },
+              },
+            },
+          },
+          products: {
+            item: {
+              parameter: "id",
+              profile: {
+                actions: { GET: "values_read" },
+                children: {
+                  assignment: commandProfile("values_write"),
+                  values: commandProfile("values_write"),
+                  validate: commandProfile("values_read"),
+                  export: commandProfile("values_export"),
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+  ],
 }
 const attributes: ProductAttributesOptions = {
   authorize: async (request, context) => {
