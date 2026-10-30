@@ -149,6 +149,9 @@ test("product specifications preserve typed values and save through a focused na
   await waitFor(() =>
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   )
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Edit" })).toHaveFocus()
+  )
 })
 
 test("variant editor updates only the selected variant and preserves product scope", async () => {
@@ -203,6 +206,50 @@ test("template assignment is explicit and uses an immutable version", async () =
   expect(mocks.prompt).not.toHaveBeenCalled()
 })
 
+test("category recommendations come from the server and leave other templates available for explicit assignment", async () => {
+  const user = userEvent.setup()
+  mocks.product.mockResolvedValue({
+    ...view,
+    template: null,
+    values: {},
+    templates: [
+      { ...view.templates[0], recommended: true, category_ids: [] },
+      {
+        ...view.templates[0],
+        id: "alternative",
+        name: "General device",
+        version: 1,
+        recommended: false,
+        category_ids: ["cat_other"],
+      },
+    ],
+  })
+  mount()
+  await user.click(
+    await screen.findByRole("button", { name: "Assign template" })
+  )
+  expect(
+    screen.getByText(/Recommended templates match this product/)
+  ).toBeInTheDocument()
+  expect(mocks.assignTemplate).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole("combobox", { name: "Specification template" })
+  )
+  expect(
+    screen.getByRole("option", { name: "Switch · v2 · Recommended" })
+  ).toBeInTheDocument()
+  await user.click(screen.getByRole("option", { name: "General device · v1" }))
+  expect(mocks.assignTemplate).not.toHaveBeenCalled()
+  await user.click(screen.getByRole("button", { name: "Apply template" }))
+  await waitFor(() =>
+    expect(mocks.assignTemplate).toHaveBeenCalledWith("product", {
+      version: "product_v1",
+      template_id: "alternative",
+      template_version: 1,
+    })
+  )
+})
+
 test("adopting a new version requires confirmation and stale assignment errors support refresh", async () => {
   const user = userEvent.setup()
   mount()
@@ -249,6 +296,9 @@ test("stale value writes preserve edits, block blind resubmission and offer conf
   await user.click(screen.getByRole("button", { name: "Reload latest" }))
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Reload unavailable"
+  )
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Reload latest" })).toHaveFocus()
   )
   expect(screen.getByLabelText("Ports")).toHaveValue(12)
   mocks.product.mockResolvedValueOnce({

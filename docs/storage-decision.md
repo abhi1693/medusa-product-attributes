@@ -1,6 +1,6 @@
 # Specification storage decision
 
-Status: awaiting maintainer direction. Native concurrency research on 2026-10-30 reproduced a data-integrity problem in the initial metadata-backed design. Do not publish that preview as a finished release.
+Status: **accepted on 2026-10-30**. Use module-owned versioned specifications linked to native Products/Variants, with validated current storefront snapshots. Native metadata is an optional export. Implementation and regression validation are in progress; do not publish the metadata-backed preview.
 
 ## Reproduced behavior
 
@@ -24,7 +24,7 @@ A pending assignment transition can prevent the particular transient validation 
 | Module-owned versioned specifications and validated storefront snapshots | Native commerce records, Admin extensions and import workflows; specification data cannot be overwritten by native Product metadata compensation | Use public module links, module-owned transactions and immutable specification revisions. Metadata can be an optional projection rather than the source of truth. Native Product publication/channel visibility still needs explicit validation; this does not make native workflows globally serializable. |
 | Authoritative native metadata with controlled writers | The original storage choice | Every specification-related native writer must participate in a supported shared-lock workflow over its entire execution and compensation. Unmodified asynchronous native imports and arbitrary direct workflows cannot be assumed to participate. |
 
-The first option is recommended to preserve the native workflow experience and durable specification edits without changing dependencies. It changes the earlier metadata-only storage decision and therefore requires an explicit choice before implementation.
+The first option was explicitly selected. Keep the existing Admin/API shape where possible. A current incomplete snapshot is withheld from Store reads rather than silently serving older specifications. This storage change does not introduce editorial approval, a separate manual publication workflow or globally serializable native Product status.
 
 ## Framework evidence
 

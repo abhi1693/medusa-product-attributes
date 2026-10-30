@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
-import type { ExecArgs, IProductModuleService } from "@medusajs/framework/types"
+import type {
+  ExecArgs,
+  IProductModuleService,
+  MedusaContainer,
+} from "@medusajs/framework/types"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import {
   createStep,
@@ -15,30 +19,38 @@ import {
   createProductVariantsWorkflow,
   updateProductsWorkflow,
   updateProductVariantsWorkflow,
+  deleteProductsWorkflow,
+  deleteProductVariantsWorkflow,
 } from "@medusajs/medusa/core-flows"
 import {
   PRODUCT_ATTRIBUTES,
   defineTemplate,
 } from "@abhi1693/medusa-product-attributes"
-import type ProductAttributesService from "@abhi1693/medusa-product-attributes/service"
+import type Service from "@abhi1693/medusa-product-attributes/service"
 import {
   mutateProductAttributes,
   productView,
   validateProduct,
   writeAttributesWorkflow,
+  exportProductAttributesMetadata,
 } from "@abhi1693/medusa-product-attributes/workflows"
 import type { AttributesMutation } from "@abhi1693/medusa-product-attributes/workflows"
-import { readEnvelope } from "@abhi1693/medusa-product-attributes/validation"
 
 async function rejects(operation: () => Promise<unknown>, expected: RegExp) {
   await assert.rejects(operation, (error: unknown) => {
-    const message =
+    assert.match(
       error && typeof error === "object" && "message" in error
         ? String(error.message)
-        : String(error)
-    assert.match(message, expected)
+        : String(error),
+      expected
+    )
     return true
   })
+}
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => (resolve = done))
+  return { promise, resolve }
 }
 
 export default async function integration({ container }: ExecArgs) {
@@ -49,9 +61,10 @@ export default async function integration({ container }: ExecArgs) {
       /^\/attributes_plugin_[a-f0-9]{16}_test$/.test(database.pathname),
     "Integration checks require a disposable local CI database"
   )
-  const service =
-    container.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
+  const service = container.resolve<Service>(PRODUCT_ATTRIBUTES)
   const products = container.resolve<IProductModuleService>(Modules.PRODUCT)
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const link = container.resolve(ContainerRegistrationKeys.LINK)
   const suffix = randomUUID().replaceAll("-", "")
   const definition = defineTemplate({
     key: `hardware_${suffix}`,
@@ -115,46 +128,47 @@ export default async function integration({ container }: ExecArgs) {
       ],
     },
   })
-  const productId = created[0].id
-  const variantId = created[0].variants[0].id
+  const productId = created[0].id,
+    variantId = created[0].variants[0].id
   let view = await productView(container, productId, true)
-  const unassignedVersion = view.version
-  view = await mutateProductAttributes(container, {
-    product_id: productId,
-    assignment: {
-      version: view.version,
-      template_id: template.id,
-      template_version: 1,
+  assert.equal(view.version, "unassigned")
+  view = await mutateProductAttributes(
+    container,
+    {
+      product_id: productId,
+      assignment: {
+        version: view.version,
+        template_id: template.id,
+        template_version: 1,
+      },
     },
-  })
+    true,
+    "user_administrator"
+  )
   assert.equal(view.assignment_version, 1)
   assert.equal(view.validation.length, 3)
   assert.deepEqual(
     await validateProduct(container, productId),
     [],
-    "A partial draft remains valid"
+    "A partial owned draft remains valid"
   )
+  assert.ok((await service.specification(productId))!.linked)
   await rejects(
     () =>
       mutateProductAttributes(container, {
         product_id: productId,
-        values: { version: unassignedVersion, values: { model: "stale" } },
+        values: { version: "unassigned", values: { model: "stale" } },
       }),
     /record changed/
   )
   await rejects(
     () =>
-      mutateProductAttributes(container, {
-        product_id: productId,
-        values: { version: view.version, values: { model: "   " } },
-      }).then(() =>
-        updateProductsWorkflow(container).run({
-          input: { products: [{ id: productId, status: "published" }] },
-        })
-      ),
+      updateProductsWorkflow(container).run({
+        input: { products: [{ id: productId, status: "published" }] },
+      }),
     /required/
   )
-  view = await productView(container, productId, true)
+  assert.equal((await products.retrieveProduct(productId)).status, "draft")
   await rejects(
     () =>
       mutateProductAttributes(container, {
@@ -172,90 +186,90 @@ export default async function integration({ container }: ExecArgs) {
       }),
     /does not belong/
   )
-  view = await mutateProductAttributes(container, {
-    product_id: productId,
-    values: {
-      version: view.version,
-      values: { model: "Example", managed: false },
-      variants: [
+  view = await mutateProductAttributes(
+    container,
+    {
+      product_id: productId,
+      values: {
+        version: view.version,
+        values: { model: "Example", managed: false },
+        variants: [
+          {
+            id: variantId,
+            version: view.variants[0].version,
+            values: { ports: 0 },
+          },
+        ],
+      },
+    },
+    true,
+    "user_editor"
+  )
+  assert.deepEqual(view.validation, [])
+  assert.equal(view.values.managed, false)
+  assert.equal(view.variants[0].values.ports, 0)
+  assert.equal(
+    (await products.retrieveProduct(productId)).metadata!.merchant_key,
+    "preserved"
+  )
+  assert.equal(
+    (await products.retrieveProductVariant(variantId)).metadata!
+      .merchant_variant_key,
+    "preserved"
+  )
+  const immutableBefore = await service.specification(productId)
+  assert.equal(
+    (
+      await service.listProductSpecificationRevisions({
+        id: immutableBefore!.revision_id,
+      })
+    )[0].actor_id,
+    "user_editor"
+  )
+  await updateProductsWorkflow(container).run({
+    input: { products: [{ id: productId, status: "published" }] },
+  })
+  assert.equal(
+    (await productView(container, productId, true)).version,
+    view.version,
+    "Unrelated native timestamps do not change specification versions"
+  )
+
+  // Native metadata is independent. Forged values, null and CSV-style batch
+  // writes cannot change owned specification values or immutable revision IDs.
+  await updateProductsWorkflow(container).run({
+    input: {
+      products: [
         {
-          id: variantId,
-          version: view.variants[0].version,
-          values: { ports: 0 },
+          id: productId,
+          metadata: { product_attributes: { values: { model: 42 } } },
         },
       ],
     },
   })
-  assert.deepEqual(view.validation, [])
-  assert.equal(view.values.managed, false)
-  assert.equal(view.variants[0].values.ports, 0)
-  await updateProductsWorkflow(container).run({
-    input: { products: [{ id: productId, status: "published" }] },
+  await batchProductsWorkflow(container).run({
+    input: { update: [{ id: productId, metadata: null }] },
   })
-  const complete = await productView(container, productId, true)
-  await rejects(
-    () =>
-      updateProductsWorkflow(container).run({
-        input: {
-          products: [
-            {
-              id: productId,
-              metadata: {
-                product_attributes: {
-                  template_id: template.id,
-                  template_version: 1,
-                  version: complete.assignment_version,
-                  values: { model: 42, managed: false },
-                },
-              },
-            },
-          ],
+  await updateProductVariantsWorkflow(container).run({
+    input: {
+      product_variants: [
+        {
+          id: variantId,
+          metadata: { product_attributes: { values: { ports: 999 } } },
         },
-      }),
-    /Enter text/
+      ],
+    },
+  })
+  await batchProductVariantsWorkflow(container).run({
+    input: { update: [{ id: variantId, metadata: null }] },
+  })
+  assert.equal(
+    (await service.specification(productId))!.revision_id,
+    immutableBefore!.revision_id
   )
   assert.deepEqual(
     (await productView(container, productId, true)).values,
-    complete.values,
-    "A native rejected write restores the previous metadata"
-  )
-  await rejects(
-    () =>
-      batchProductsWorkflow(container).run({
-        input: { update: [{ id: productId, metadata: null }] },
-      }),
-    /does not match/
-  )
-  assert.deepEqual(
-    (await productView(container, productId, true)).values,
-    complete.values
-  )
-  await rejects(
-    () =>
-      updateProductVariantsWorkflow(container).run({
-        input: {
-          product_variants: [
-            {
-              id: variantId,
-              metadata: {
-                product_attributes: { version: 2, values: { ports: 65 } },
-              },
-            },
-          ],
-        },
-      }),
-    /outside the allowed range/
-  )
-  assert.deepEqual(
-    (await productView(container, productId, true)).variants[0].values,
-    { ports: 0 }
-  )
-  await rejects(
-    () =>
-      batchProductVariantsWorkflow(container).run({
-        input: { update: [{ id: variantId, metadata: null }] },
-      }),
-    /required/
+    view.values
   )
   const variantCount = (
     await products.retrieveProduct(productId, { relations: ["variants"] })
@@ -281,42 +295,113 @@ export default async function integration({ container }: ExecArgs) {
       .variants.length,
     variantCount
   )
-  const malformedTitle = `Invalid namespace ${suffix}`
-  await rejects(
-    () =>
-      createProductsWorkflow(container).run({
-        input: {
-          products: [
-            {
-              ...makeProduct(malformedTitle),
-              metadata: { product_attributes: {} },
-            },
-          ],
-        },
-      }),
-    /Invalid product attributes/
-  )
+
+  // A failed first module-link creation must remove provisional records, with a
+  // clean retry for the same native product and variant identities.
+  const otherId = created[1].id
+  const originalLinkCreate = link.create
+  let injectLinkFailure = true
+  link.create = async function (
+    ...args: Parameters<typeof originalLinkCreate>
+  ) {
+    if (injectLinkFailure) {
+      injectLinkFailure = false
+      const data = Array.isArray(args[0]) ? args[0] : [args[0]]
+      await originalLinkCreate.call(this, [data[0]])
+      throw new Error("Injected specification link failure")
+    }
+    return originalLinkCreate.apply(this, args)
+  }
+  try {
+    await rejects(
+      () =>
+        mutateProductAttributes(container, {
+          product_id: otherId,
+          assignment: {
+            version: "unassigned",
+            template_id: template.id,
+            template_version: 1,
+          },
+        }),
+      /Injected specification link failure/
+    )
+  } finally {
+    link.create = originalLinkCreate
+  }
+  assert.equal(await service.specification(otherId, true), null)
   assert.equal(
-    (await products.listProducts({ title: malformedTitle })).length,
+    (await service.listProductSpecifications({ product_id: otherId })).length,
     0
   )
+  const { data: orphanLinks } = await query.graph({
+    entity: "product_product_specification",
+    fields: ["product_id", "product_specification_id"],
+    filters: { product_id: otherId },
+  })
+  assert.equal(
+    orphanLinks.length,
+    0,
+    "Partial first link creation is compensated without orphan link records"
+  )
+  let other = await mutateProductAttributes(container, {
+    product_id: otherId,
+    assignment: {
+      version: "unassigned",
+      template_id: template.id,
+      template_version: 1,
+    },
+  })
+  assert.equal(other.template!.id, template.id)
+  const transactionBefore = (await service.specification(productId))!
+  const historyBefore = (
+    await service.listAndCountProductSpecificationRevisions({
+      specification_id: transactionBefore.id,
+    })
+  )[1]
+  await rejects(
+    () =>
+      service.writeSpecification({
+        product_id: productId,
+        template_id: template.id,
+        template_version: 1,
+        expected_version: transactionBefore.version,
+        complete: false,
+        values: { model: "Must roll back", managed: false },
+        variants: { [created[1].variants[0].id]: {} },
+        actor_id: "test-transaction-conflict",
+      }),
+    /another specification/
+  )
+  assert.equal(
+    (await service.specification(productId))!.revision_id,
+    transactionBefore.revision_id,
+    "A late own-module failure rolls back the current revision pointer"
+  )
+  assert.equal(
+    (
+      await service.listAndCountProductSpecificationRevisions({
+        specification_id: transactionBefore.id,
+      })
+    )[1],
+    historyBefore,
+    "A late own-module failure leaves no partial immutable revision"
+  )
 
-  const beforeFailure = await productView(container, productId, true)
   const failure = createStep(
-    `test-failure-${suffix}`,
+    `test-owned-failure-${suffix}`,
     async (written: { product_id: string }) => {
       if (written.product_id) throw new Error("Injected downstream failure")
       return new StepResponse(false)
     }
   )
   const failureWorkflow = createWorkflow(
-    `test-compensation-${suffix}`,
+    `test-owned-compensation-${suffix}`,
     (input: AttributesMutation) => {
       const written = writeAttributesWorkflow.runAsStep({ input })
-      const failed = failure(written)
-      return new WorkflowResponse(failed)
+      return new WorkflowResponse(failure(written))
     }
   )
+  const beforeFailure = await productView(container, productId, true)
   await rejects(
     () =>
       failureWorkflow(container).run({
@@ -331,12 +416,11 @@ export default async function integration({ container }: ExecArgs) {
     /Injected downstream failure/
   )
   const afterFailure = await productView(container, productId, true)
-  assert.equal(
-    afterFailure.assignment_version,
-    beforeFailure.assignment_version,
-    "Binding reservation compensates after native writes"
-  )
   assert.deepEqual(afterFailure.values, beforeFailure.values)
+  assert.ok(
+    afterFailure.assignment_version > beforeFailure.assignment_version,
+    "Rollback creates another immutable revision without reusing versions"
+  )
   const retried = await mutateProductAttributes(container, {
     product_id: productId,
     values: {
@@ -345,6 +429,30 @@ export default async function integration({ container }: ExecArgs) {
     },
   })
   assert.equal(retried.values.model, "Retry succeeds")
+  other = await productView(container, otherId, true)
+  await rejects(
+    () =>
+      failureWorkflow(container).run({
+        input: {
+          product_id: otherId,
+          values: {
+            version: other.version,
+            variants: [
+              {
+                id: other.variants[0].id,
+                version: other.variants[0].version,
+                values: { ports: 12 },
+              },
+            ],
+          },
+        },
+      }),
+    /Injected downstream failure/
+  )
+  assert.deepEqual(
+    (await productView(container, otherId, true)).variants[0].values,
+    {}
+  )
   const race = await Promise.allSettled(
     ["First", "Second"].map((model) =>
       mutateProductAttributes(container, {
@@ -356,6 +464,119 @@ export default async function integration({ container }: ExecArgs) {
   assert.equal(race.filter((result) => result.status === "fulfilled").length, 1)
   assert.equal(race.filter((result) => result.status === "rejected").length, 1)
 
+  // Deterministic regression: native parent captures its previous metadata,
+  // then a canonical specification write commits before the parent rolls back.
+  let current = await productView(container, productId, true)
+  const originalExportUpsert = products.upsertProducts
+  products.upsertProducts = async function () {
+    throw new Error("Injected metadata export failure")
+  } as typeof products.upsertProducts
+  try {
+    await rejects(
+      () =>
+        exportProductAttributesMetadata(container, productId, current.version),
+      /Injected metadata export failure/
+    )
+  } finally {
+    products.upsertProducts = originalExportUpsert
+  }
+  assert.equal(
+    (await service.specification(productId))!.revision_id,
+    current.version,
+    "Metadata export failure never rolls back authoritative values"
+  )
+  assert.deepEqual(
+    (await service.specification(productId))!.values,
+    current.values
+  )
+  await exportProductAttributesMetadata(container, productId, current.version)
+  const nativeReached = deferred(),
+    resumeNative = deferred()
+  const pauseNative = createStep(
+    `pause-native-parent-${suffix}`,
+    async (written: Array<{ id: string }>) => {
+      nativeReached.resolve()
+      await resumeNative.promise
+      if (written.length) throw new Error("Injected native parent failure")
+      return new StepResponse(false)
+    }
+  )
+  const nativeParent = createWorkflow(
+    `native-parent-race-${suffix}`,
+    (input: { id: string }) => {
+      const written = updateProductsWorkflow.runAsStep({
+        input: {
+          products: [{ id: input.id, title: "Temporary native title" }],
+        },
+      })
+      return new WorkflowResponse(pauseNative(written))
+    }
+  )
+  const parent = nativeParent(container).run({ input: { id: productId } })
+  const parentRejected = rejects(() => parent, /Injected native parent failure/)
+  await nativeReached.promise
+  const survived = await mutateProductAttributes(container, {
+    product_id: productId,
+    values: {
+      version: current.version,
+      values: { model: "Survives native rollback" },
+    },
+  })
+  resumeNative.resolve()
+  await parentRejected
+  assert.equal(
+    (await productView(container, productId, true)).version,
+    survived.version
+  )
+  assert.equal(
+    (await productView(container, productId, true)).values.model,
+    "Survives native rollback"
+  )
+  assert.notEqual(
+    (await products.retrieveProduct(productId)).title,
+    "Temporary native title"
+  )
+
+  // Ordinary native title editing during an already-committed owned update
+  // must not encounter a transient assignment/version mismatch.
+  const ownedReached = deferred(),
+    resumeOwned = deferred(),
+    originalWrite = service.writeSpecification
+  service.writeSpecification = async function (
+    ...args: Parameters<Service["writeSpecification"]>
+  ) {
+    const receipt = await originalWrite.apply(this, args)
+    ownedReached.resolve()
+    await resumeOwned.promise
+    return receipt
+  }
+  try {
+    const pending = mutateProductAttributes(container, {
+      product_id: productId,
+      values: {
+        version: survived.version,
+        values: { model: "Native overlap safe" },
+      },
+    })
+    await ownedReached.promise
+    await updateProductsWorkflow(container).run({
+      input: { products: [{ id: productId, title: "Native title preserved" }] },
+    })
+    resumeOwned.resolve()
+    await pending
+  } finally {
+    resumeOwned.resolve()
+    service.writeSpecification = originalWrite
+  }
+  assert.equal(
+    (await productView(container, productId, true)).values.model,
+    "Native overlap safe"
+  )
+  assert.equal(
+    (await products.retrieveProduct(productId)).title,
+    "Native title preserved"
+  )
+
   const revision = await service.save(
     {
       ...definition,
@@ -364,94 +585,370 @@ export default async function integration({ container }: ExecArgs) {
         field.key === "ports" ? { ...field, max: 32 } : field
       ),
     },
-    "test-administrator",
+    "user_administrator",
     template.id,
     1
   )
   assert.equal(revision.version, 2)
   assert.equal(
     (await productView(container, productId, true)).template!.version,
-    1,
-    "Existing products stay pinned"
+    1
   )
   assert.equal((await service.revision(template.id, 1)).name, "Hardware")
-  const [outdated, outdatedCount] =
-    await service.listAndCountProductTemplateAssignments(
-      { template_id: template.id, template_version: { $lt: 2 } },
-      {
-        skip: 0,
-        take: 25,
-        order: { id: "ASC" },
-        select: ["id", "product_id", "template_version"],
-      }
-    )
-  assert.equal(outdatedCount, 1)
-  assert.equal(outdated[0].product_id, productId)
-  const { data: impactProducts } = await container
-    .resolve(ContainerRegistrationKeys.QUERY)
-    .graph({
-      entity: "product",
-      fields: ["id", "title", "status"],
-      filters: { id: [productId] },
-    })
-  assert.equal(impactProducts[0].id, productId)
-
+  const [outdated, count] = await service.listAndCountProductSpecifications(
+    { template_id: template.id, linked: true, template_version: { $lt: 2 } },
+    {
+      skip: 0,
+      take: 25,
+      order: { id: "ASC" },
+      select: ["id", "product_id", "template_version"],
+    }
+  )
+  assert.equal(count, 2)
+  assert.ok(outdated.some((item) => item.product_id === productId))
+  const { data: impact } = await query.graph({
+    entity: "product",
+    fields: [
+      "id",
+      "title",
+      "status",
+      "product_specification.id",
+      "product_specification.current_revision.id",
+      "variants.product_specification_variant.id",
+    ],
+    filters: { id: [productId] },
+  })
+  assert.equal(impact[0].id, productId)
+  assert.ok(
+    impact[0].product_specification?.id,
+    "Native Query traverses public Product specification link"
+  )
+  assert.equal(
+    impact[0].product_specification.current_revision.id,
+    (await service.specification(productId))!.revision_id
+  )
+  assert.ok(
+    impact[0].variants[0].product_specification_variant?.id,
+    "Native Query traverses the public Variant specification link"
+  )
   await rejects(
-    () => service.save(definition, "test-administrator", template.id, 1),
+    () => service.save(definition, "user_administrator", template.id, 1),
     /record changed/
   )
-  const beforeAdopt = await productView(container, productId, true)
+  current = await productView(container, productId, true)
   const adopted = await mutateProductAttributes(container, {
     product_id: productId,
     assignment: {
-      version: beforeAdopt.version,
+      version: current.version,
       template_id: template.id,
       template_version: 2,
     },
   })
   assert.equal(adopted.template!.version, 2)
+  assert.equal(adopted.variants[0].values.ports, 0)
   assert.equal(
     (
-      await service.listAndCountProductTemplateAssignments({
+      await service.listAndCountProductSpecifications({
         template_id: template.id,
+        linked: true,
         template_version: { $lt: 2 },
       })
     )[1],
-    0
+    1
   )
-  assert.equal(adopted.variants[0].values.ports, 0)
   await service.archive(template.id, 2)
   assert.equal(
     (await productView(container, productId, true)).template!.archived,
     true
   )
   assert.deepEqual(await validateProduct(container, productId, true), [])
-  const originalNative = await products.retrieveProduct(productId, {
-    relations: ["variants"],
-  })
-  assert.equal(originalNative.metadata!.merchant_key, "preserved")
-  assert.equal(
-    originalNative.variants[0].metadata!.merchant_variant_key,
-    "preserved"
-  )
-  assert.equal(readEnvelope(originalNative.metadata)!.template_version, 2)
 
-  // Direct module service calls are a trusted boundary, and bypass workflows.
-  // The exported validator still detects invalid persisted publication state.
-  await products.updateProducts(productId, {
-    metadata: {
-      product_attributes: {
-        ...readEnvelope(originalNative.metadata)!,
-        values: {},
-      },
+  // Public link cascade lifecycle includes native rollback and normal deletion.
+  const otherVariant = created[1].variants[0].id
+  const beforeDeleteRefs = await service.listProductSpecificationVariants({
+    variant_id: otherVariant,
+  })
+  assert.equal(beforeDeleteRefs.length, 1)
+  await deleteProductVariantsWorkflow(container).run({
+    input: { ids: [otherVariant] },
+  })
+  assert.equal(
+    (
+      await service.listProductSpecificationVariants({
+        variant_id: otherVariant,
+      })
+    ).length,
+    0
+  )
+  await products.restoreProductVariants([otherVariant])
+  await link.restore({
+    [Modules.PRODUCT]: {
+      product_variant_id: [otherVariant],
+      variant_id: [otherVariant],
     },
   })
-  assert.ok((await validateProduct(container, productId, true)).length > 0)
-  await updateProductsWorkflow(container).run({
-    input: { products: [{ id: productId, metadata: originalNative.metadata }] },
+  assert.equal(
+    (
+      await service.listProductSpecificationVariants({
+        variant_id: otherVariant,
+      })
+    ).length,
+    1
+  )
+  const deleteThenFail = createWorkflow(
+    `delete-specification-rollback-${suffix}`,
+    (input: { ids: string[] }) => {
+      deleteProductsWorkflow.runAsStep({ input })
+      return new WorkflowResponse(failure({ product_id: input.ids[0] }))
+    }
+  )
+  await rejects(
+    () => deleteThenFail(container).run({ input: { ids: [otherId] } }),
+    /Injected downstream failure/
+  )
+  assert.ok(
+    await service.specification(otherId),
+    "Native delete rollback restores owned specification cascade links"
+  )
+  await deleteProductsWorkflow(container).run({ input: { ids: [otherId] } })
+  assert.equal(await service.specification(otherId), null)
+  await products.restoreProducts([otherId])
+  await link.restore({
+    [Modules.PRODUCT]: {
+      product_id: [otherId],
+      product_variant_id: [otherVariant],
+      variant_id: [otherVariant],
+    },
   })
-  assert.deepEqual(await validateProduct(container, productId, true), [])
+  assert.ok(
+    await service.specification(otherId),
+    "Explicit native restore + Link.restore restores owned snapshot"
+  )
+  // Hosts resolve native categories after migration, then synchronize complete
+  // app-owned definitions without mutating plugin configuration at startup.
+  const category = await products.createProductCategories({
+    name: `Definitions ${suffix}`,
+    handle: `definitions-${suffix}`,
+  })
+  const configuredDefinition = defineTemplate({
+    ...definition,
+    key: `resolved_${suffix}`,
+    category_ids: [category.id],
+  })
+  const definitions = Object.freeze([configuredDefinition])
+  const configurationBefore = JSON.stringify(service.configuration.templates)
+  assert.equal((await service.synchronizeDefinitions(definitions)).changed, 1)
+  const synced = (await service.page({ q: configuredDefinition.key }))
+    .templates[0]
+  assert.equal(synced.source, "configuration")
+  assert.deepEqual((await service.revision(synced.id)).category_ids, [
+    category.id,
+  ])
+  assert.equal(
+    (await service.synchronizeDefinitions(definitions)).changed,
+    0,
+    "Resolved definitions synchronize idempotently"
+  )
+  assert.equal(
+    JSON.stringify(service.configuration.templates),
+    configurationBefore,
+    "Explicit definitions never mutate module configuration"
+  )
+  assert.equal(
+    (
+      await service.synchronizeDefinitions([
+        { ...configuredDefinition, name: "Resolved definition revised" },
+      ])
+    ).changed,
+    1
+  )
+  assert.equal((await service.revision(synced.id)).version, 2)
+  assert.equal(
+    (await service.revision(synced.id, 1)).name,
+    configuredDefinition.name
+  )
+  assert.equal((await service.synchronizeDefinitions([])).changed, 1)
+  assert.equal((await service.revision(synced.id)).archived, true)
+  assert.equal((await service.synchronizeDefinitions([])).changed, 0)
+  await verifyAtomicInitialization(container, suffix)
   console.info(
-    "Product attributes integration checks passed: native workflows, batch validation, compensation/retry, concurrency, pinned revisions, values and metadata preservation"
+    "Owned specifications integration passed: transactions/CAS, native links, immutable revisions, native rollback isolation, metadata independence and delete/restore"
+  )
+}
+
+export async function verifyAtomicInitialization(
+  container: MedusaContainer,
+  suffix: string
+) {
+  const service = container.resolve<Service>(PRODUCT_ATTRIBUTES),
+    link = container.resolve(ContainerRegistrationKeys.LINK),
+    query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const template = await service.save(
+    defineTemplate({
+      key: `atomic_${suffix}`,
+      name: "Atomic initialization",
+      fields: [
+        {
+          key: "model",
+          label: "Model",
+          type: "text",
+          scope: "product",
+          required: true,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+        {
+          key: "managed",
+          label: "Managed",
+          type: "boolean",
+          scope: "product",
+          required: true,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+        {
+          key: "ports",
+          label: "Ports",
+          type: "number",
+          scope: "variant",
+          required: true,
+          min: 0,
+          max: 64,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+      ],
+    }),
+    "test-atomic-initialization"
+  )
+  const {
+    result: [product],
+  } = await createProductsWorkflow(container).run({
+    input: {
+      products: [
+        {
+          title: `Published atomic ${suffix}`,
+          status: "published",
+          options: [{ title: "Configuration", values: ["Default"] }],
+          variants: [
+            {
+              title: "Default",
+              manage_inventory: false,
+              options: { Configuration: "Default" },
+            },
+          ],
+        },
+      ],
+    },
+  })
+  const before = await productView(container, product.id, true)
+  const combined = {
+    product_id: product.id,
+    assignment: {
+      version: before.version,
+      template_id: template.id,
+      template_version: 1,
+    },
+    values: {
+      version: before.version,
+      values: { model: "Complete first snapshot", managed: false },
+      variants: before.variants.map((variant) => ({
+        id: variant.id,
+        version: variant.version,
+        values: { ports: 0 },
+      })),
+    },
+  }
+  await rejects(
+    () =>
+      mutateProductAttributes(container, {
+        ...combined,
+        values: { ...combined.values, version: "stale" },
+      }),
+    /record changed/
+  )
+  await rejects(
+    () =>
+      mutateProductAttributes(container, {
+        ...combined,
+        assignment: { ...combined.assignment, version: "stale" },
+      }),
+    /record changed/
+  )
+  assert.equal(
+    await service.specification(product.id, true),
+    null,
+    "Either stale parent token refuses initialization before writing"
+  )
+  let observedRevisions = 0
+  const create = link.create
+  link.create = async function (...args: Parameters<typeof create>) {
+    const owned = (await service.specification(product.id, true))!
+    observedRevisions = (
+      await service.listAndCountProductSpecificationRevisions({
+        specification_id: owned.id,
+      })
+    )[1]
+    const links = Array.isArray(args[0]) ? args[0] : [args[0]]
+    await create.call(this, [links[0]])
+    throw new Error("Injected atomic first-link failure")
+  }
+  try {
+    await rejects(
+      () =>
+        mutateProductAttributes(container, combined, true, "seed:atomic-check"),
+      /Injected atomic first-link failure/
+    )
+  } finally {
+    link.create = create
+  }
+  assert.equal(
+    observedRevisions,
+    1,
+    "Combined initialization writes exactly one complete snapshot before linking"
+  )
+  assert.equal(
+    await service.specification(product.id, true),
+    null,
+    "Failed combined first assignment removes its one provisional snapshot"
+  )
+  const { data: orphans } = await query.graph({
+    entity: "product_product_specification",
+    fields: ["product_id", "product_specification_id"],
+    filters: { product_id: product.id },
+  })
+  assert.equal(orphans.length, 0)
+  const initialized = await mutateProductAttributes(
+    container,
+    combined,
+    true,
+    "seed:atomic-check"
+  )
+  assert.equal(initialized.assignment_version, 1)
+  assert.equal(initialized.values.model, "Complete first snapshot")
+  assert.equal(initialized.values.managed, false)
+  assert.equal(initialized.variants[0].values.ports, 0)
+  assert.deepEqual(initialized.validation, [])
+  assert.deepEqual(await validateProduct(container, product.id, true), [])
+  const owned = (await service.specification(product.id))!
+  assert.equal(
+    (
+      await service.listAndCountProductSpecificationRevisions({
+        specification_id: owned.id,
+      })
+    )[1],
+    1
+  )
+  assert.equal(
+    (
+      await service.listProductSpecificationRevisions({ id: owned.revision_id })
+    )[0].actor_id,
+    "seed:atomic-check"
+  )
+  console.info(
+    "Atomic assignment+values initialization passed for a published native Product, including stale-token refusal and partial-link rollback/retry"
   )
 }

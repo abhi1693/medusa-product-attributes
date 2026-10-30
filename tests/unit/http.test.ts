@@ -17,6 +17,7 @@ import {
   archiveTemplate,
   assignProduct,
   checkProduct,
+  exportProductMetadata,
   getProduct,
   getTemplate,
   listTemplates,
@@ -24,19 +25,17 @@ import {
   saveTemplate,
   storeProduct,
 } from "../../src/api/handlers"
-import {
-  metadataMutation,
-  protectNativeProductWrites,
-} from "../../src/api/native-guard"
+import { validateNativeProductPublication } from "../../src/api/native-guard"
+import { protectPrivateSpecificationRelations } from "../../src/api/private-relations"
 
 const workflows = vi.hoisted(() => ({
   productView: vi.fn(),
   productState: vi.fn(),
   productIssues: vi.fn(),
   validateProduct: vi.fn(),
-  variantEnvelope: vi.fn(),
   enforceProduct: vi.fn(),
   mutateProductAttributes: vi.fn(),
+  exportProductAttributesMetadata: vi.fn(),
 }))
 vi.mock("../../src/workflows/read", () => workflows)
 vi.mock("../../src/workflows/write", () => workflows)
@@ -78,8 +77,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     history: vi.fn().mockResolvedValue([revision]),
     save: vi.fn().mockResolvedValue(revision),
     archive: vi.fn().mockResolvedValue({ ...revision, archived: true }),
-    listAndCountProductTemplateAssignments: vi.fn().mockResolvedValue([[], 0]),
-    binding: vi.fn().mockResolvedValue({ template_id: revision.id }),
+    listAndCountProductSpecifications: vi.fn().mockResolvedValue([[], 0]),
   }
   const products = {
     retrieveProduct: vi.fn().mockResolvedValue({
@@ -116,22 +114,32 @@ beforeEach(() => {
   })
   workflows.validateProduct.mockResolvedValue([])
   workflows.productIssues.mockReturnValue([])
+  workflows.exportProductAttributesMetadata.mockResolvedValue({
+    revision_id: "psr_current",
+  })
   workflows.productState.mockResolvedValue({
     namespace: "specifications",
     template: revision,
-    stored: { values: { ports: 24 } },
+    specification: {
+      id: "pas_switch",
+      product_id: "prod_switch",
+      template_id: revision.id,
+      template_version: 2,
+      version: 7,
+      revision_id: "psr_current",
+      values: { ports: 24 },
+      variants: { variant_24: { ports: 24 }, variant_removed: { ports: 999 } },
+    },
     product: {
       id: "prod_switch",
       status: "published",
+      metadata: { specifications: { values: { ports: 999 } } },
       variants: [
-        { id: "variant_24", metadata: { specifications: { ports: 24 } } },
+        { id: "variant_24", metadata: { specifications: { ports: 888 } } },
         { id: "variant_48", metadata: null },
       ],
     },
   })
-  workflows.variantEnvelope.mockImplementation((metadata) =>
-    metadata ? { values: { ports: 24 } } : null
-  )
 })
 
 describe("Admin authorization", () => {
@@ -322,20 +330,20 @@ describe("template assignment impact", () => {
       params: { id: revision.id },
       query: { offset: "20", limit: "10", outdated: "true" },
     })
-    service.listAndCountProductTemplateAssignments.mockResolvedValue([
+    service.listAndCountProductSpecifications.mockResolvedValue([
       [
         {
-          id: "binding_visible",
+          id: "specification_visible",
           product_id: "prod_visible",
           template_version: 1,
         },
         {
-          id: "binding_denied",
+          id: "specification_denied",
           product_id: "prod_denied",
           template_version: 1,
         },
         {
-          id: "binding_deleted",
+          id: "specification_deleted",
           product_id: "prod_deleted",
           template_version: 1,
         },
@@ -359,8 +367,8 @@ describe("template assignment impact", () => {
       ],
     })
     await templateAssignments(request, response)
-    expect(service.listAndCountProductTemplateAssignments).toHaveBeenCalledWith(
-      { template_id: revision.id, template_version: { $lt: 2 } },
+    expect(service.listAndCountProductSpecifications).toHaveBeenCalledWith(
+      { template_id: revision.id, linked: true, template_version: { $lt: 2 } },
       {
         skip: 20,
         take: 10,
@@ -405,8 +413,8 @@ describe("template assignment impact", () => {
       params: { id: revision.id },
     })
     await templateAssignments(request, response)
-    expect(service.listAndCountProductTemplateAssignments).toHaveBeenCalledWith(
-      { template_id: revision.id },
+    expect(service.listAndCountProductSpecifications).toHaveBeenCalledWith(
+      { template_id: revision.id, linked: true },
       {
         skip: 0,
         take: 20,
@@ -421,10 +429,10 @@ describe("template assignment impact", () => {
       offset: 0,
       limit: 20,
     })
-    service.listAndCountProductTemplateAssignments.mockResolvedValue([
+    service.listAndCountProductSpecifications.mockResolvedValue([
       [
         {
-          id: "binding_denied",
+          id: "specification_denied",
           product_id: "prod_denied",
           template_version: 2,
         },
@@ -480,9 +488,7 @@ describe("template assignment impact", () => {
     await expect(templateAssignments(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.FORBIDDEN,
     })
-    expect(
-      service.listAndCountProductTemplateAssignments
-    ).not.toHaveBeenCalled()
+    expect(service.listAndCountProductSpecifications).not.toHaveBeenCalled()
     expect(response.json).not.toHaveBeenCalled()
   })
 
@@ -496,10 +502,10 @@ describe("template assignment impact", () => {
     )
     service.revision.mockRejectedValueOnce(missing)
     await expect(templateAssignments(request, response)).rejects.toBe(missing)
-    service.listAndCountProductTemplateAssignments.mockResolvedValue([
+    service.listAndCountProductSpecifications.mockResolvedValue([
       [
         {
-          id: "binding_visible",
+          id: "specification_visible",
           product_id: "prod_visible",
           template_version: 1,
         },
@@ -564,7 +570,9 @@ describe("Admin product endpoints", () => {
       {
         product_id: "prod_switch",
         assignment: request.body,
-      }
+      },
+      true,
+      "user_admin"
     )
     request.body = {
       version: "native-stamp:8",
@@ -580,7 +588,9 @@ describe("Admin product endpoints", () => {
     await saveProductValues(request, response)
     expect(workflows.mutateProductAttributes).toHaveBeenLastCalledWith(
       request.scope,
-      { product_id: "prod_switch", values: request.body }
+      { product_id: "prod_switch", values: request.body },
+      true,
+      "user_admin"
     )
     const conflict = new MedusaError(
       MedusaError.Types.CONFLICT,
@@ -627,6 +637,67 @@ describe("Admin product endpoints", () => {
   })
 })
 
+describe("explicit metadata export", () => {
+  test("requires both read and write policy and the exact current revision token", async () => {
+    const { request, response, service } = fixture({
+      body: { version: "psr_current" },
+    })
+    const adapter = vi.fn().mockResolvedValue(true)
+    service.configuration.authorize = adapter
+    await exportProductMetadata(request, response)
+    expect(adapter.mock.calls.map(([, context]) => context)).toEqual([
+      { action: "values.read", product_id: "prod_switch" },
+      { action: "values.write", product_id: "prod_switch" },
+    ])
+    expect(
+      workflows.exportProductAttributesMetadata
+    ).toHaveBeenCalledExactlyOnceWith(
+      request.scope,
+      "prod_switch",
+      "psr_current"
+    )
+    expect(response.json).toHaveBeenCalledWith({ revision_id: "psr_current" })
+    expect(workflows.mutateProductAttributes).not.toHaveBeenCalled()
+    for (const deniedAction of ["values.read", "values.write"]) {
+      adapter.mockImplementation(
+        async (_request, context: any) => context.action !== deniedAction
+      )
+      await expect(
+        exportProductMetadata(request, response)
+      ).rejects.toMatchObject({ type: MedusaError.Types.FORBIDDEN })
+    }
+    expect(workflows.exportProductAttributesMetadata).toHaveBeenCalledOnce()
+  })
+
+  test("rejects malformed requests and propagates stale or native failures without canonical writes", async () => {
+    const { request, response } = fixture()
+    for (const body of [
+      null,
+      {},
+      { version: "" },
+      { version: "psr_current", force: true },
+    ]) {
+      request.body = body
+      await expect(
+        exportProductMetadata(request, response)
+      ).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
+    }
+    expect(workflows.exportProductAttributesMetadata).not.toHaveBeenCalled()
+    request.body = { version: "psr_current" }
+    for (const failure of [
+      new MedusaError(MedusaError.Types.CONFLICT, "Stale revision"),
+      new Error("Native export failed"),
+    ]) {
+      workflows.exportProductAttributesMetadata.mockRejectedValueOnce(failure)
+      await expect(exportProductMetadata(request, response)).rejects.toBe(
+        failure
+      )
+    }
+    expect(workflows.mutateProductAttributes).not.toHaveBeenCalled()
+    expect(response.json).not.toHaveBeenCalled()
+  })
+})
+
 describe("Store visibility boundary", () => {
   const call = (
     request: AuthenticatedMedusaRequest,
@@ -646,8 +717,13 @@ describe("Store visibility boundary", () => {
     const snapshot = await state
     expect(workflows.productIssues).toHaveBeenCalledWith(
       revision,
-      snapshot.product,
-      "specifications",
+      {
+        values: { ports: 24 },
+        variants: [
+          { id: "variant_24", values: { ports: 24 } },
+          { id: "variant_48", values: {} },
+        ],
+      },
       true
     )
     expect(query.graph).toHaveBeenCalledWith({
@@ -669,10 +745,6 @@ describe("Store visibility boundary", () => {
         { id: "variant_48", values: {} },
       ],
     })
-    expect(workflows.variantEnvelope).toHaveBeenCalledWith(
-      null,
-      "specifications"
-    )
     workflows.productState.mockResolvedValue({
       ...snapshot,
       product: { id: "prod_switch", status: "published" },
@@ -729,6 +801,14 @@ describe("Store visibility boundary", () => {
     await expect(call(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.NOT_FOUND,
     })
+    workflows.productState.mockResolvedValueOnce({
+      product: { id: "prod_switch", status: "published" },
+      template: revision,
+      specification: null,
+    })
+    await expect(call(request, response)).rejects.toMatchObject({
+      type: MedusaError.Types.NOT_FOUND,
+    })
     workflows.productIssues.mockReturnValueOnce([
       { path: "ports", code: "required", message: "Ports is required" },
     ])
@@ -739,22 +819,22 @@ describe("Store visibility boundary", () => {
     expect(products.retrieveProduct).not.toHaveBeenCalled()
   })
 
-  test("withholds corrupted persisted envelopes and never mixes publication snapshots", async () => {
+  test("withholds corrupt or incomplete current revisions without falling back to older snapshots", async () => {
     const { request, response } = fixture()
     workflows.productState.mockRejectedValueOnce(
       new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        "Protected binding mismatch"
+        "Invalid owned specification snapshot"
       )
     )
     await expect(call(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.NOT_FOUND,
       message: "Product attributes not found",
     })
-    workflows.variantEnvelope.mockImplementationOnce(() => {
+    workflows.productIssues.mockImplementationOnce(() => {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        "Invalid variant envelope"
+        "Invalid owned variant values"
       )
     })
     await expect(call(request, response)).rejects.toMatchObject({
@@ -765,8 +845,30 @@ describe("Store visibility boundary", () => {
     workflows.productState.mockResolvedValueOnce({
       product: { id: "prod_switch", status: "draft" },
       template: revision,
-      stored: { values: { ports: 99 } },
+      specification: {
+        revision_id: "psr_current",
+        values: { ports: 99 },
+        variants: {},
+      },
     })
+    await expect(call(request, response)).rejects.toMatchObject({
+      type: MedusaError.Types.NOT_FOUND,
+    })
+    expect(workflows.productState).toHaveBeenCalledOnce()
+    workflows.productState.mockClear()
+    const current = await workflows.productState.getMockImplementation()!()
+    workflows.productState.mockClear()
+    workflows.productState.mockResolvedValueOnce({
+      ...current,
+      specification: {
+        ...current.specification,
+        revision_id: "psr_incomplete",
+        values: {},
+      },
+    })
+    workflows.productIssues.mockReturnValueOnce([
+      { path: "ports", code: "required", message: "Ports is required" },
+    ])
     await expect(call(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.NOT_FOUND,
     })
@@ -775,79 +877,34 @@ describe("Store visibility boundary", () => {
   })
 })
 
-describe("native product write protection", () => {
-  test("recognizes namespace writes and destructive clearing throughout batch payloads", () => {
-    for (const value of [null, true, 3, "value", [], {}, { metadata: {} }])
-      expect(metadataMutation(value, "specifications")).toBeNull()
-    expect(
-      metadataMutation({ metadata: { unrelated: "kept" } }, "specifications")
-    ).toBeNull()
-    expect(
-      metadataMutation(
-        {
-          update: [
-            { title: "Switch" },
-            { variants: [{ metadata: { specifications: null } }] },
-          ],
-        },
-        "specifications"
-      )
-    ).toBe("reserved")
-    expect(metadataMutation({ metadata: null }, "specifications")).toBe("clear")
-    expect(metadataMutation([{ metadata: "" }], "specifications")).toBe("clear")
-    expect(
-      metadataMutation({ variants: [{ metadata: null }] }, "specifications")
-    ).toBe("clear")
-    expect(
-      metadataMutation({ metadata: "unrelated" }, "specifications")
-    ).toBeNull()
-    for (const value of [
-      [{ metadata: null }, { metadata: { specifications: {} } }],
-      { metadata: null, variants: [{ metadata: { specifications: {} } }] },
-    ])
-      expect(metadataMutation(value, "specifications")).toBe("reserved")
-  })
-
-  test("blocks direct namespace replacement and clears without losing native lifecycle", async () => {
-    const { request, response, service } = fixture({
-      body: { variants: [{ metadata: { specifications: {} } }] },
-    })
+describe("native product publication validation", () => {
+  test("allows native metadata clearing and forged projections without changing specifications", async () => {
+    const { request, response, resolve } = fixture()
     const next = vi.fn()
-    await expect(
-      protectNativeProductWrites(request, response, next)
-    ).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
-    expect(service.binding).not.toHaveBeenCalled()
-    request.body = { metadata: null }
-    await expect(
-      protectNativeProductWrites(request, response, next)
-    ).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
-    expect(next).not.toHaveBeenCalled()
-    service.binding.mockResolvedValueOnce(null)
-    await protectNativeProductWrites(request, response, next)
-    expect(next).toHaveBeenCalledOnce()
-    service.binding.mockClear().mockResolvedValue(null)
-    request.body = {
-      update: [
-        { id: "prod_unassigned", metadata: null },
-        { id: "prod_unassigned", metadata: { specifications: {} } },
-      ],
+    for (const body of [
+      null,
+      [],
+      { metadata: null },
+      { metadata: { product_attributes: { values: { ports: 999 } } } },
+      { variants: [{ metadata: null }] },
+      { update: [{ id: "prod_switch", metadata: { product_attributes: {} } }] },
+    ]) {
+      request.body = body
+      await validateNativeProductPublication(request, response, next)
     }
-    next.mockClear()
-    await expect(
-      protectNativeProductWrites(request, response, next)
-    ).rejects.toMatchObject({ type: MedusaError.Types.INVALID_DATA })
-    expect(service.binding).not.toHaveBeenCalled()
-    expect(next).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledTimes(6)
+    expect(resolve).not.toHaveBeenCalled()
+    expect(workflows.enforceProduct).not.toHaveBeenCalled()
+    expect(workflows.mutateProductAttributes).not.toHaveBeenCalled()
   })
 
-  test("enforces required attributes before direct and batch publication", async () => {
-    const { request, response, service } = fixture({
+  test("validates direct and batch publication against current owned specifications", async () => {
+    const { request, response } = fixture({
       path: "/admin/Products/prod%2Fswitch",
-      body: { status: "published", metadata: { merchant_note: "Preserve" } },
+      body: { status: "published", metadata: null },
     })
     const next = vi.fn()
-    await protectNativeProductWrites(request, response, next)
-    expect(service.binding).toHaveBeenCalledWith("prod/switch")
+    await validateNativeProductPublication(request, response, next)
     expect(workflows.enforceProduct).toHaveBeenCalledWith(
       request.scope,
       "prod/switch",
@@ -858,13 +915,14 @@ describe("native product write protection", () => {
       update: [
         null,
         { title: "No identifier" },
+        { id: 7, status: "published" },
         { id: "prod_draft", status: "draft" },
         { id: "prod_switch", status: "published" },
         { id: "prod_switch", status: "published" },
       ],
     }
     workflows.enforceProduct.mockClear()
-    await protectNativeProductWrites(request, response, next)
+    await validateNativeProductPublication(request, response, next)
     expect(workflows.enforceProduct).toHaveBeenCalledExactlyOnceWith(
       request.scope,
       "prod_switch",
@@ -875,30 +933,32 @@ describe("native product write protection", () => {
     )
     next.mockClear()
     await expect(
-      protectNativeProductWrites(request, response, next)
+      validateNativeProductPublication(request, response, next)
     ).rejects.toThrow("Ports is required")
     expect(next).not.toHaveBeenCalled()
   })
 
-  test("allows unrelated operations and rejects malformed encoded identifiers", async () => {
-    const { request, response, service } = fixture()
+  test("leaves non-product and import dispatch paths to their native workflows", async () => {
+    const { request, response } = fixture({ body: { status: "published" } })
     const next = vi.fn()
     for (const path of [
+      "/",
       "/admin/products",
+      "/admin/products/batch",
       "/admin/products/import",
+      "/admin/products/imports",
       "/admin/products/export",
       "/admin/products/export-fields",
       "/admin/product-variants/variant_24",
     ]) {
       Object.assign(request, { path })
-      request.body = null
-      await protectNativeProductWrites(request, response, next)
+      await validateNativeProductPublication(request, response, next)
     }
-    expect(service.binding).not.toHaveBeenCalled()
-    expect(next).toHaveBeenCalledTimes(5)
+    expect(next).toHaveBeenCalledTimes(8)
+    expect(workflows.enforceProduct).not.toHaveBeenCalled()
     Object.assign(request, { path: "/admin/products/%invalid" })
     await expect(
-      protectNativeProductWrites(request, response, next)
+      validateNativeProductPublication(request, response, next)
     ).rejects.toMatchObject({
       type: MedusaError.Types.INVALID_DATA,
       message: "Malformed product identifier",
@@ -925,6 +985,8 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
     await import("../../src/api/store/products/[id]/attributes/route.js")
   const impact =
     await import("../../src/api/admin/product-attributes/templates/[id]/products/route.js")
+  const exportRoute =
+    await import("../../src/api/admin/product-attributes/products/[id]/export/route.js")
   expect(templates.GET).toBe(listTemplates)
   expect(templates.POST).toBe(saveTemplate)
   expect(template.GET).toBe(getTemplate)
@@ -936,23 +998,34 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
   expect(validation.POST).toBe(checkProduct)
   expect(store.GET).toBe(storeProduct)
   expect(impact.GET).toBe(templateAssignments)
+  expect(exportRoute.POST).toBe(exportProductMetadata)
   expect(middleware.routes).toEqual([
     expect.objectContaining({
       matcher: expect.any(RegExp),
+      middlewares: [protectPrivateSpecificationRelations],
+    }),
+    expect.objectContaining({
+      matcher: expect.any(RegExp),
       methods: ["POST", "PUT", "PATCH"],
-      middlewares: [protectNativeProductWrites],
+      middlewares: [validateNativeProductPublication],
     }),
   ])
-  const matcher = middleware.routes![0].matcher as RegExp
+  const globalMatcher = middleware.routes![0].matcher as RegExp
   for (const path of [
     "/admin/products",
-    "/admin/products/batch",
-    "/admin/product-variants/variant_24",
+    "/store/products",
+    "/ADMIN/products",
+    "/STORE/products",
   ])
+    expect(globalMatcher.test(path)).toBe(true)
+  expect(globalMatcher.test("/auth/user/emailpass")).toBe(false)
+  const matcher = middleware.routes![1].matcher as RegExp
+  for (const path of ["/admin/products", "/admin/products/batch"])
     expect(matcher.test(path)).toBe(true)
   for (const path of [
     "/store/products/prod_switch",
     "/admin/product-attributes/templates",
+    "/admin/product-variants/variant_24",
   ])
     expect(matcher.test(path)).toBe(false)
 })

@@ -1,12 +1,17 @@
 import { defineMiddlewares } from "@medusajs/framework/http"
-import { protectNativeProductWrites } from "./native-guard"
+import { validateNativeProductPublication } from "./native-guard"
+import { protectPrivateSpecificationRelations } from "./private-relations"
 
 export default defineMiddlewares({
   routes: [
     {
-      matcher: /^\/admin\/(?:products|product-variants)(?:\/.*)?$/i,
+      matcher: /^\/(?:admin|store)(?:\/|$)/i,
+      middlewares: [protectPrivateSpecificationRelations],
+    },
+    {
+      matcher: /^\/admin\/products(?:\/.*)?$/i,
       method: ["POST", "PUT", "PATCH"],
-      middlewares: [protectNativeProductWrites],
+      middlewares: [validateNativeProductPublication],
     },
   ],
 })

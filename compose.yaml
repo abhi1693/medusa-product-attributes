@@ -44,12 +44,7 @@ services:
   host-dependencies:
     <<: *host
     restart: "no"
-    command:
-      [
-        "sh",
-        "-ec",
-        "npm install --package-lock-only --ignore-scripts --no-audit --no-fund && npm ci --no-audit --no-fund",
-      ]
+    command: ["node", "/plugin/scripts/install-host.mjs"]
     depends_on:
       plugin-build:
         condition: service_completed_successfully

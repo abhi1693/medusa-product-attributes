@@ -1,7 +1,6 @@
 import { vi } from "vitest"
 import type { MedusaContainer } from "@medusajs/framework/types"
-import type { TemplateRevision } from "../../src/types"
-
+import type { OwnedSpecification, TemplateRevision } from "../../src/types"
 export const template: TemplateRevision = {
   id: "pat_test",
   key: "network",
@@ -38,69 +37,71 @@ export const template: TemplateRevision = {
   ],
 }
 export const timestamp = "2026-10-30T00:00:00.000Z"
-export const stored = {
-  template_id: template.id,
-  template_version: 1,
-  version: 1,
-  values: { model: "Example" },
-}
 export function harness(assigned = true) {
   const product = {
     id: "prod_test",
     title: "Example",
     status: "draft",
     updated_at: timestamp,
-    metadata: {
-      other: "preserved",
-      ...(assigned ? { product_attributes: structuredClone(stored) } : {}),
-    },
+    metadata: { merchant_key: "preserved" },
+    categories: [],
     variants: [
       {
         id: "variant_test",
         title: "Default",
         updated_at: timestamp,
-        metadata: {
-          other: "preserved",
-          ...(assigned
-            ? { product_attributes: { version: 1, values: { ports: 8 } } }
-            : {}),
-        },
+        metadata: { merchant_key: "preserved" },
       },
     ],
   } as any
-  const binding = assigned
+  const specification: OwnedSpecification | null = assigned
     ? {
-        id: "pab_test",
+        id: "pspec_test",
         product_id: product.id,
         template_id: template.id,
         template_version: 1,
         version: 1,
+        revision_id: "psrev_1",
+        linked: true,
+        values: { model: "Example" },
+        variants: { variant_test: { ports: 8 } },
       }
     : null
+  const after = {
+    ...(specification || {
+      id: "pspec_test",
+      product_id: product.id,
+      template_id: template.id,
+      template_version: 1,
+      values: {},
+      variants: {},
+    }),
+    version: 2,
+    revision_id: "psrev_2",
+    linked: true,
+  }
   const service = {
     configuration: { metadata_key: "product_attributes" },
-    binding: vi.fn().mockResolvedValue(binding),
+    specification: vi.fn().mockResolvedValue(specification),
     revision: vi.fn().mockResolvedValue(template),
     page: vi.fn().mockResolvedValue({ templates: [template] }),
-    reserveBinding: vi.fn().mockResolvedValue({
-      before: binding,
-      after: {
-        ...(binding || {
-          id: "pab_test",
-          product_id: product.id,
-          template_id: template.id,
-          template_version: 1,
-        }),
-        version: 2,
-      },
+    writeSpecification: vi.fn().mockResolvedValue({
+      before: specification,
+      after,
+      created_variants: [],
     }),
-    restoreBinding: vi.fn(),
+    restoreSpecification: vi.fn(),
+    confirmSpecification: vi.fn(),
   }
   const products = {
     retrieveProduct: vi.fn().mockResolvedValue(product),
     retrieveProductVariant: vi
       .fn()
       .mockResolvedValue({ product_id: product.id }),
+  }
+  const link = {
+    create: vi.fn().mockResolvedValue([]),
+    dismiss: vi.fn().mockResolvedValue([]),
   }
   const locking = {
     execute: vi.fn(async (_key: string, operation: () => unknown) =>
@@ -109,8 +110,14 @@ export function harness(assigned = true) {
   }
   const container = {
     resolve: vi.fn((key) =>
-      key === "product" ? products : key === "locking" ? locking : service
+      key === "product"
+        ? products
+        : key === "locking"
+          ? locking
+          : key === "link"
+            ? link
+            : service
     ),
   } as unknown as MedusaContainer
-  return { product, binding, service, products, locking, container }
+  return { product, specification, service, products, locking, link, container }
 }

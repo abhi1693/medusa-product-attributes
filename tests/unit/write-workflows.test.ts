@@ -1,140 +1,208 @@
 import { describe, expect, it, vi } from "vitest"
-import { harness, template, timestamp } from "../helpers/backend"
-
+import { harness, template } from "../helpers/backend"
 const runtime = vi.hoisted(() => ({
   run: vi.fn().mockResolvedValue({}),
-  steps: new Map<string, unknown>(),
+  productRun: vi.fn().mockResolvedValue({}),
+  variantRun: vi.fn().mockResolvedValue({}),
   builder: undefined as unknown,
+  plan: {} as any,
+  receipt: {} as any,
 }))
 vi.mock("@medusajs/medusa/core-flows", () => ({
-  updateProductsWorkflow: {
-    runAsStep: vi.fn(() => ({ config: () => "product_write" })),
-  },
-  updateProductVariantsWorkflow: {
-    runAsStep: vi.fn(() => ({ config: () => "variant_write" })),
-  },
+  createRemoteLinkStep: vi.fn((input) => input),
+  updateProductsWorkflow: () => ({ run: runtime.productRun }),
+  updateProductVariantsWorkflow: () => ({ run: runtime.variantRun }),
 }))
 vi.mock("@medusajs/framework/workflows-sdk", async (original) => {
   const sdk =
     await original<typeof import("@medusajs/framework/workflows-sdk")>()
   return {
     ...sdk,
-    createStep: (name: string, handler: unknown) => {
-      runtime.steps.set(name, handler)
-      return (input: unknown) => input
-    },
+    createStep: (name: string) => (input: any) =>
+      name === "prepare-product-specification"
+        ? runtime.plan
+        : name === "write-owned-product-specification"
+          ? runtime.receipt
+          : input.product_id,
     createWorkflow: (_name: string, builder: unknown) => {
       runtime.builder = builder
       return () => ({ run: runtime.run })
     },
-    transform: (input: unknown, fn: (value: unknown) => unknown) => fn(input),
+    transform: (input: unknown, handler: (input: unknown) => unknown) =>
+      handler(input),
   }
 })
 import {
-  mutateProductAttributes,
   prepareAttributesMutation,
-  reserveAttributesBinding,
-  restoreAttributesBinding,
-  productMutationInput,
-  variantMutationInput,
+  writeSpecification,
+  restoreSpecification,
+  specificationLinks,
+  createSpecificationLinks,
+  dismissSpecificationLinks,
+  confirmationInput,
+  confirmSpecification,
+  mutateProductAttributes,
+  exportProductAttributesMetadata,
 } from "../../src/workflows/write"
-
-const version = `${timestamp}:1`
-describe("canonical metadata write planning", () => {
-  it("assigns a template to a draft and preserves unrelated native metadata", async () => {
+const version = "psrev_1"
+describe("owned immutable write orchestration", () => {
+  it("plans explicit first assignment without mutating native records", async () => {
     const h = harness(false)
-    const result = await prepareAttributesMutation(
-      {
-        product_id: h.product.id,
-        assignment: {
-          version: `${timestamp}:0`,
-          template_id: template.id,
-          template_version: 1,
-        },
-      },
-      h
-    )
-    expect(result.output).toMatchObject({
-      product_id: h.product.id,
-      template_id: template.id,
-      template_version: 1,
-      binding_version: 0,
-      products: [
+    const plan = (
+      await prepareAttributesMutation(
         {
-          id: h.product.id,
-          metadata: { product_attributes: { version: 1, values: {} } },
+          product_id: h.product.id,
+          assignment: {
+            version: "unassigned",
+            template_id: template.id,
+            template_version: 1,
+          },
         },
-      ],
-      variants: [],
-    })
-    expect(h.product.metadata).toEqual({ other: "preserved" })
-    expect(productMutationInput({ plan: result.output })).toEqual({
-      products: result.output.products,
-    })
-    expect(variantMutationInput({ plan: result.output })).toEqual({
-      product_variants: [],
-    })
-    const builder = runtime.builder as (value: unknown) => unknown
-    expect(builder(result.output)).toBeDefined()
-  })
-  it("merges only selected scopes, supports explicit clearing and retains schema pin", async () => {
-    const h = harness()
-    const next = await prepareAttributesMutation(
-      {
-        product_id: h.product.id,
-        values: {
-          version,
-          values: { model: null },
-          variants: [{ id: "variant_test", version, values: { ports: 0 } }],
-        },
-      },
-      h
-    )
-    expect(next.output.products[0].metadata.product_attributes).toMatchObject({
-      template_id: template.id,
-      template_version: 1,
-      version: 2,
+        h
+      )
+    ).output
+    expect(plan).toMatchObject({
+      expected_version: 0,
       values: {},
+      variants: { variant_test: {} },
+      complete: false,
+      actor_id: "system:workflow",
     })
-    expect(next.output.variants).toEqual([
+    expect(h.product.metadata).toEqual({ merchant_key: "preserved" })
+    runtime.plan = plan
+    runtime.receipt = await h.service.writeSpecification()
+    expect(
+      (runtime.builder as (input: unknown) => unknown)({
+        product_id: h.product.id,
+      })
+    ).toBeDefined()
+    expect(
+      specificationLinks({
+        receipt: {
+          ...runtime.receipt,
+          before: null,
+          created_variants: [{ id: "psvar", variant_id: "variant_test" }],
+        },
+      })
+    ).toEqual([
       {
-        id: "variant_test",
-        metadata: { product_attributes: { version: 2, values: { ports: 0 } } },
+        product: { product_id: h.product.id },
+        product_attributes: { product_specification_id: "pspec_test" },
+      },
+      {
+        product: { product_variant_id: "variant_test" },
+        product_attributes: { product_specification_variant_id: "psvar" },
       },
     ])
-    const variantOnly = await prepareAttributesMutation(
+    expect(specificationLinks({ receipt: runtime.receipt })).toEqual([
       {
-        product_id: h.product.id,
-        values: {
-          version,
-          variants: [{ id: "variant_test", version, values: { ports: 9 } }],
-        },
+        product: { product_id: h.product.id },
+        product_attributes: { product_specification_id: "pspec_test" },
       },
-      h
-    )
-    expect(
-      variantOnly.output.products[0].metadata.product_attributes.values
-    ).toEqual({ model: "Example" })
-    h.product.variants[0].metadata = {}
-    const fresh = await prepareAttributesMutation(
+    ])
+  })
+  it("initializes a complete published specification atomically and checks both parent versions before writes", async () => {
+    const h = harness(false)
+    h.product.status = "published"
+    const combined = {
+      product_id: h.product.id,
+      assignment: {
+        version: "unassigned",
+        template_id: template.id,
+        template_version: 1,
+      },
+      values: {
+        version: "unassigned",
+        values: { model: "Complete first snapshot" },
+        variants: [
+          { id: "variant_test", version: "unassigned", values: { ports: 0 } },
+        ],
+      },
+    }
+    expect((await prepareAttributesMutation(combined, h)).output).toMatchObject(
       {
-        product_id: h.product.id,
-        values: {
-          version,
-          variants: [
-            {
-              id: "variant_test",
-              version: `${timestamp}:0`,
-              values: { ports: 1 },
-            },
-          ],
-        },
-      },
-      h
+        expected_version: 0,
+        complete: true,
+        values: { model: "Complete first snapshot" },
+        variants: { variant_test: { ports: 0 } },
+      }
     )
-    expect(fresh.output.variants[0].metadata.product_attributes).toMatchObject({
-      version: 1,
+    await expect(
+      prepareAttributesMutation(
+        {
+          ...combined,
+          assignment: { ...combined.assignment, version: "stale" },
+        },
+        h
+      )
+    ).rejects.toThrow("record changed")
+    await expect(
+      prepareAttributesMutation(
+        { ...combined, values: { ...combined.values, version: "stale" } },
+        h
+      )
+    ).rejects.toThrow("record changed")
+    await expect(
+      prepareAttributesMutation(
+        {
+          ...combined,
+          values: {
+            ...combined.values,
+            variants: [
+              { id: "variant_test", version: "stale", values: { ports: 0 } },
+            ],
+          },
+        },
+        h
+      )
+    ).rejects.toThrow("record changed")
+    expect(h.service.writeSpecification).not.toHaveBeenCalled()
+  })
+  it("merges only provided scopes and retains explicit zero/false/clear operations", async () => {
+    const h = harness()
+    const plan = (
+      await prepareAttributesMutation(
+        {
+          product_id: h.product.id,
+          actor_id: "user_editor",
+          values: {
+            version,
+            values: { model: null },
+            variants: [{ id: "variant_test", version, values: { ports: 0 } }],
+          },
+        },
+        h
+      )
+    ).output
+    expect(plan).toMatchObject({
+      values: {},
+      variants: { variant_test: { ports: 0 } },
+      actor_id: "user_editor",
+      expected_version: 1,
     })
+    expect(
+      (
+        await prepareAttributesMutation(
+          {
+            product_id: h.product.id,
+            values: {
+              version,
+              variants: [{ id: "variant_test", version, values: { ports: 9 } }],
+            },
+          },
+          h
+        )
+      ).output.values
+    ).toEqual({ model: "Example" })
+    h.specification!.variants = {}
+    expect(
+      (
+        await prepareAttributesMutation(
+          { product_id: h.product.id, values: { version } },
+          h
+        )
+      ).output.variants
+    ).toEqual({ variant_test: {} })
     h.product.variants = undefined
     expect(
       (
@@ -143,9 +211,9 @@ describe("canonical metadata write planning", () => {
           h
         )
       ).output.variants
-    ).toEqual([])
+    ).toEqual({})
   })
-  it("rejects stale product/variant versions, duplicates and cross-product IDs", async () => {
+  it("rejects stale head, stale variant, duplicates, foreign IDs and invalid scopes", async () => {
     const h = harness()
     await expect(
       prepareAttributesMutation(
@@ -169,27 +237,49 @@ describe("canonical metadata write planning", () => {
       prepareAttributesMutation(
         {
           product_id: h.product.id,
-          values: { version, variants: [{ id: "other", version, values: {} }] },
+          values: {
+            version,
+            variants: [{ id: "foreign", version, values: {} }],
+          },
         },
         h
       )
     ).rejects.toThrow("does not belong")
-    const entry = { id: "variant_test", version, values: {} }
+    const patch = { id: "variant_test", version, values: {} }
     await expect(
       prepareAttributesMutation(
         {
           product_id: h.product.id,
-          values: { version, variants: [entry, entry] },
+          values: { version, variants: [patch, patch] },
         },
         h
       )
     ).rejects.toThrow("unique")
+    await expect(
+      prepareAttributesMutation(
+        {
+          product_id: h.product.id,
+          values: { version, values: { model: 42 } },
+        },
+        h
+      )
+    ).rejects.toThrow("Enter text")
+    h.product.status = "published"
+    await expect(
+      prepareAttributesMutation(
+        {
+          product_id: h.product.id,
+          values: { version, values: { model: " " } },
+        },
+        h
+      )
+    ).rejects.toThrow("required")
   })
-  it("refuses missing/archived assignment, invalid values and incompatible adoption", async () => {
+  it("rejects missing or archived assignment and incompatible published adoption", async () => {
     const h = harness(false)
     await expect(
       prepareAttributesMutation(
-        { product_id: h.product.id, values: { version: `${timestamp}:0` } },
+        { product_id: h.product.id, values: { version: "unassigned" } },
         h
       )
     ).rejects.toThrow("Assign a template")
@@ -199,7 +289,7 @@ describe("canonical metadata write planning", () => {
         {
           product_id: h.product.id,
           assignment: {
-            version: `${timestamp}:0`,
+            version: "unassigned",
             template_id: template.id,
             template_version: 1,
           },
@@ -208,25 +298,7 @@ describe("canonical metadata write planning", () => {
       )
     ).rejects.toThrow("Archived")
     const assigned = harness()
-    await expect(
-      prepareAttributesMutation(
-        {
-          product_id: assigned.product.id,
-          values: { version, values: { model: 42 } },
-        },
-        assigned
-      )
-    ).rejects.toThrow("Enter text")
     assigned.product.status = "published"
-    await expect(
-      prepareAttributesMutation(
-        {
-          product_id: assigned.product.id,
-          values: { version, values: { model: " " } },
-        },
-        assigned
-      )
-    ).rejects.toThrow("required")
     assigned.service.revision.mockResolvedValue({
       ...template,
       version: 2,
@@ -248,40 +320,142 @@ describe("canonical metadata write planning", () => {
       )
     ).rejects.toThrow("outside the allowed range")
   })
-  it("reserves a versioned binding, compensates it and serializes canonical writes", async () => {
+  it("writes an atomic owned snapshot, confirms links, compensates and serializes callers", async () => {
     const h = harness()
-    const input = {
-      product_id: h.product.id,
-      template_id: template.id,
-      template_version: 1,
-      binding_version: 1,
-    }
-    const reserved = await reserveAttributesBinding(input, h)
-    expect(reserved.output).toBe(h.product.id)
-    expect(h.service.reserveBinding).toHaveBeenCalledWith(
+    const plan = (
+      await prepareAttributesMutation(
+        { product_id: h.product.id, values: { version } },
+        h
+      )
+    ).output
+    const receipt = await writeSpecification(plan, h)
+    expect(h.service.writeSpecification).toHaveBeenCalledWith(plan)
+    expect(specificationLinks({ receipt: receipt.output })).toEqual([])
+    expect(confirmationInput({ receipt: receipt.output })).toEqual(
+      receipt.output.after
+    )
+    expect((await confirmSpecification(receipt.output.after, h)).output).toBe(
+      h.product.id
+    )
+    expect(h.service.confirmSpecification).toHaveBeenCalledWith(
       h.product.id,
-      template.id,
-      1,
-      1
+      "psrev_2"
     )
-    await restoreAttributesBinding(reserved.compensateInput, h)
-    expect(h.service.restoreBinding).toHaveBeenCalledWith(
-      reserved.compensateInput
+    await restoreSpecification(receipt.compensateInput, h)
+    await restoreSpecification(undefined, h)
+    expect(h.service.restoreSpecification).toHaveBeenCalledOnce()
+    h.product.status = "published"
+    h.product.variants.push({ id: "new", title: "New" })
+    await expect(confirmSpecification(receipt.output.after, h)).rejects.toThrow(
+      "required"
     )
-    await restoreAttributesBinding(undefined, h)
-    expect(h.service.restoreBinding).toHaveBeenCalledTimes(1)
+    h.product.variants = []
     const mutation = { product_id: h.product.id, values: { version } }
     expect(
       (await mutateProductAttributes(h.container, mutation)).can_write
     ).toBe(true)
+    expect(runtime.run).toHaveBeenCalledWith({
+      input: { ...mutation, actor_id: "system:workflow" },
+    })
     expect(h.locking.execute).toHaveBeenCalledWith(
       `product-attributes:${h.product.id}`,
       expect.any(Function),
       { timeout: 10 }
     )
-    expect(runtime.run).toHaveBeenCalledWith({ input: mutation })
     expect(
-      (await mutateProductAttributes(h.container, mutation, false)).can_write
+      (
+        await mutateProductAttributes(
+          h.container,
+          mutation,
+          false,
+          "user_editor"
+        )
+      ).can_write
     ).toBe(false)
+  })
+  it("compensates public links even when creation fails after a partial write", async () => {
+    const h = harness()
+    const links = specificationLinks({
+      receipt: { ...(await h.service.writeSpecification()), before: null },
+    })
+    expect((await createSpecificationLinks(links, h)).output).toEqual(links)
+    expect(h.link.create).toHaveBeenCalledWith(links)
+    await createSpecificationLinks([], h)
+    expect(h.link.create).toHaveBeenCalledOnce()
+    h.link.create.mockRejectedValueOnce(new Error("Native link unavailable"))
+    await expect(createSpecificationLinks(links, h)).rejects.toThrow(
+      "Native link unavailable"
+    )
+    h.link.create.mockRejectedValueOnce("offline")
+    await expect(createSpecificationLinks(links, h)).rejects.toThrow(
+      "Unable to link product specifications"
+    )
+    await dismissSpecificationLinks(links, h)
+    await dismissSpecificationLinks([], h)
+    await dismissSpecificationLinks(undefined, h)
+    expect(h.link.dismiss).toHaveBeenCalledOnce()
+  })
+  it("exports only explicit one-way snapshots and leaves authority untouched on export failures", async () => {
+    const h = harness()
+    expect(
+      await exportProductAttributesMetadata(h.container, h.product.id, version)
+    ).toEqual({ revision_id: version })
+    expect(runtime.productRun).toHaveBeenCalledWith({
+      input: {
+        products: [
+          {
+            id: h.product.id,
+            metadata: {
+              product_attributes: {
+                revision_id: version,
+                template_id: template.id,
+                template_version: 1,
+                values: { model: "Example" },
+              },
+            },
+          },
+        ],
+      },
+    })
+    expect(runtime.variantRun).toHaveBeenCalledWith({
+      input: {
+        product_variants: [
+          {
+            id: "variant_test",
+            metadata: {
+              product_attributes: {
+                revision_id: version,
+                values: { ports: 8 },
+              },
+            },
+          },
+        ],
+      },
+    })
+    h.specification!.variants = {}
+    await exportProductAttributesMetadata(h.container, h.product.id, version)
+    h.product.variants = undefined
+    await exportProductAttributesMetadata(h.container, h.product.id, version)
+    await expect(
+      exportProductAttributesMetadata(h.container, h.product.id, "stale")
+    ).rejects.toThrow("record changed")
+    runtime.productRun.mockRejectedValueOnce(new Error("Export unavailable"))
+    await expect(
+      exportProductAttributesMetadata(h.container, h.product.id, version)
+    ).rejects.toThrow("Export unavailable")
+    expect(h.service.writeSpecification).not.toHaveBeenCalled()
+    expect(h.specification!.values).toEqual({ model: "Example" })
+    const missing = harness(false)
+    await expect(
+      exportProductAttributesMetadata(
+        missing.container,
+        missing.product.id,
+        "unassigned"
+      )
+    ).rejects.toThrow("Assign a template")
+    h.service.revision.mockResolvedValue(null)
+    await expect(
+      exportProductAttributesMetadata(h.container, h.product.id, version)
+    ).rejects.toThrow("Assign a template")
   })
 })

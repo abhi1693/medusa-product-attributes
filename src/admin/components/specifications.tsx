@@ -10,9 +10,10 @@ import {
   usePrompt,
 } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { AttributeValues, ProductAttributes } from "../../types"
 import { attributesApi, attributesKeys } from "../lib/api"
+import { restoreFocus } from "../lib/focus"
 import { AttributeInput, formatAttributeValue } from "./attribute-input"
 import { errorMessage, Feedback } from "./feedback"
 
@@ -28,6 +29,9 @@ const ValuesEditor = ({
   onSaved: (view: ProductAttributes) => void
 }) => {
   const variant = view.variants.find((item) => item.id === variantId)
+  const [opener] = useState(() => document.activeElement)
+  const reloadButton = useRef<HTMLButtonElement>(null)
+  const [focusAfterReload, setFocusAfterReload] = useState(false)
   const [values, setValues] = useState<AttributeValues>(() => ({
     ...(variant ? variant.values : view.values),
   }))
@@ -36,11 +40,18 @@ const ValuesEditor = ({
   const [error, setError] = useState<string>()
   const [stale, setStale] = useState(false)
   const prompt = usePrompt()
+  useEffect(() => {
+    if (!pending && focusAfterReload) {
+      restoreFocus(reloadButton.current)
+      setFocusAfterReload(false)
+    }
+  }, [pending, focusAfterReload])
   const fields = view.template!.fields.filter(
     (field) => field.scope === (variantId ? "variant" : "product")
   )
   const close = async () => {
     if (pending) return
+    const previouslyFocused = document.activeElement
     if (
       dirty &&
       !(await prompt({
@@ -49,8 +60,10 @@ const ValuesEditor = ({
         confirmText: "Discard",
         cancelText: "Keep editing",
       }))
-    )
+    ) {
+      restoreFocus(previouslyFocused)
       return
+    }
     onClose()
   }
   const submit = async (event: React.FormEvent) => {
@@ -75,6 +88,7 @@ const ValuesEditor = ({
     }
   }
   const reload = async () => {
+    const previouslyFocused = document.activeElement
     const confirmed = await prompt({
       title: "Reload specifications?",
       description:
@@ -82,13 +96,17 @@ const ValuesEditor = ({
       confirmText: "Reload",
       cancelText: "Keep editing",
     })
-    if (!confirmed) return
+    if (!confirmed) {
+      restoreFocus(previouslyFocused)
+      return
+    }
     setPending(true)
     try {
       onSaved(await attributesApi.product(view.product_id))
       onClose()
     } catch (failure) {
       setError(errorMessage(failure))
+      setFocusAfterReload(true)
     } finally {
       setPending(false)
     }
@@ -100,7 +118,12 @@ const ValuesEditor = ({
         void close()
       }}
     >
-      <Drawer.Content>
+      <Drawer.Content
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          restoreFocus(opener)
+        }}
+      >
         <Drawer.Header>
           <Drawer.Title>
             {variantId ? "Edit variant specifications" : "Edit specifications"}
@@ -113,28 +136,29 @@ const ValuesEditor = ({
           onSubmit={submit}
           className="flex flex-1 flex-col overflow-hidden"
         >
+          {error && (
+            <div
+              role="alert"
+              className="mx-6 mt-4 flex shrink-0 flex-col gap-2 rounded-lg border border-ui-border-error p-3 text-sm text-ui-fg-error"
+            >
+              <span>{error}</span>
+              {stale && (
+                <Button
+                  size="small"
+                  variant="secondary"
+                  type="button"
+                  disabled={pending}
+                  ref={reloadButton}
+                  onClick={() => {
+                    void reload()
+                  }}
+                >
+                  Reload latest
+                </Button>
+              )}
+            </div>
+          )}
           <Drawer.Body className="flex flex-1 flex-col gap-5 overflow-y-auto">
-            {error && (
-              <div
-                role="alert"
-                className="flex flex-col gap-2 rounded-lg border border-ui-border-error p-3 text-sm text-ui-fg-error"
-              >
-                <span>{error}</span>
-                {stale && (
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    type="button"
-                    disabled={pending}
-                    onClick={() => {
-                      void reload()
-                    }}
-                  >
-                    Reload latest
-                  </Button>
-                )}
-              </div>
-            )}
             {fields.length === 0 && (
               <Text className="text-ui-fg-subtle">
                 This template has no {variantId ? "variant" : "product"} fields.
@@ -396,10 +420,16 @@ export const Specifications = ({
           </Button>
           {selecting && (
             <div className="flex flex-col gap-3">
+              {view.templates.some((template) => template.recommended) && (
+                <Text size="small" className="text-ui-fg-subtle">
+                  Recommended templates match this product’s categories. You can
+                  choose any available template.
+                </Text>
+              )}
               <Combobox
                 aria-label="Specification template"
                 options={view.templates.map((template) => ({
-                  label: `${template.name} · v${template.version}`,
+                  label: `${template.name} · v${template.version}${template.recommended ? " · Recommended" : ""}`,
                   value: template.id,
                 }))}
                 value={templateId}

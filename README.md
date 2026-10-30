@@ -7,9 +7,9 @@
 
 Typed product specifications and versioned templates for Medusa v2. Define reusable fields, edit values in the native Admin, and keep a consistent data contract for storefront presentation, indexing and comparison.
 
-The plugin owns template definitions. Medusa Product and Product Variant metadata own the values. Your application supplies its categories, brands and authorization policy.
+The plugin owns template definitions and immutable specification revisions linked to native Medusa Products and Variants. Your application supplies its categories, brands and authorization policy. Native metadata can be an optional derived export.
 
-Development preview: the first release has not been published to npm. The [storage design review](docs/storage-decision.md) records a reproduced native workflow concurrency issue that must be resolved before release.
+Development preview: the first release has not been published to npm. The [accepted storage design](docs/storage-decision.md) preserves specification edits independently of native Product rollback. Native consuming-package and browser validation must finish before release.
 
 ## Capabilities
 
@@ -92,11 +92,11 @@ An application's root dependency overrides are not inherited from this plugin. R
 
 Assign a template explicitly to a product. Category associations suggest suitable templates; they do not silently switch a product's schema. Schema changes create a new version. Archiving prevents new assignments while preserving existing versions and values.
 
-Values stored in native metadata must be safe for public disclosure. The search/filter/comparison flags describe intended presentation and indexing; they are not access controls. Do not place private operational notes or secrets in specification fields.
+The Store endpoint serves a complete current specification revision only for a native published product in the publishable key's sales channel. Native Product rollback cannot overwrite the module's specification values. Incomplete or ineligible records are withheld; the endpoint does not fall back to an older revision. The search/filter/comparison flags describe intended presentation and indexing; they are not confidentiality controls. Do not place private operational notes or secrets in storefront specification fields or metadata exports.
 
 Custom Admin APIs require a native Medusa user. Without an authorization callback, authenticated administrators can manage attributes. Supply `authorize(request, context)` to enforce fine-grained application permissions for `templates.read`, `templates.write`, `values.read` and `values.write`. The server checks permission independently of button visibility.
 
-Native workflow hooks run after native writes and use workflow compensation when validation fails. This is not a single transaction across modules. Hooks support one handler each; applications already consuming those hooks must compose the public validation handlers explicitly. Trusted scripts that call native module services directly must integrate validation themselves. See [framework evidence and limits](docs/research.md).
+Specification revisions and their current pointers commit within one owning module transaction. Native workflow hooks validate publication and variant changes after native writes; native failures use workflow compensation. This does not create a single transaction across modules or globally serialize native workflows. Hooks support one handler each; applications already consuming those hooks must compose the public validation handlers explicitly. Trusted scripts that call native module services directly must integrate validation themselves. See [framework evidence and limits](docs/research.md).
 
 ## License
 

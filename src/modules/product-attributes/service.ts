@@ -9,17 +9,27 @@ import {
   MedusaError,
   MedusaService,
 } from "@medusajs/framework/utils"
-import { defineTemplate, resolveModuleOptions } from "../../config"
+import {
+  defineTemplate,
+  resolveModuleOptions,
+  resolveOptions,
+} from "../../config"
 import type {
   ProductAttributesOptions,
-  ProductTemplateBinding,
+  AttributeValues,
+  OwnedSpecification,
+  SpecificationWriteInput,
+  SpecificationWriteReceipt,
   TemplateDefinition,
   TemplateRevision,
   TemplateSummary,
 } from "../../types"
-import AttributeTemplate from "./models/template"
-import AttributeRevision from "./models/revision"
-import ProductTemplateAssignment from "./models/binding"
+import ProductAttributeTemplate from "./models/template"
+import ProductAttributeRevision from "./models/revision"
+import ProductSpecification from "./models/specification"
+import ProductSpecificationRevision from "./models/specification-revision"
+import ProductSpecificationVariant from "./models/specification-variant"
+import { validateValues } from "../../validation"
 
 export const conflict = (): never => {
   throw new MedusaError(
@@ -32,9 +42,11 @@ const invalid = (message: string): never => {
 }
 
 export default class ProductAttributesService extends MedusaService({
-  AttributeTemplate,
-  AttributeRevision,
-  ProductTemplateAssignment,
+  ProductAttributeTemplate,
+  ProductAttributeRevision,
+  ProductSpecification,
+  ProductSpecificationRevision,
+  ProductSpecificationVariant,
 }) {
   readonly configuration: ReturnType<typeof resolveModuleOptions>
   constructor(
@@ -46,77 +58,215 @@ export default class ProductAttributesService extends MedusaService({
   }
 
   @InjectManager()
-  async binding(
+  async specification(
     productId: string,
+    includeUnlinked = false,
     @MedusaContext() context?: Context<EntityManager>
-  ): Promise<ProductTemplateBinding | null> {
+  ): Promise<OwnedSpecification | null> {
     const manager = context!.transactionManager || context!.manager!
-    const [binding] = await manager.execute<ProductTemplateBinding[]>(
-      "select id,product_id,template_id,template_version,version from product_attribute_binding where product_id=? and deleted_at is null",
+    const [record] = await manager.execute<OwnedSpecification[]>(
+      `select s.id,s.product_id,s.template_id,s.template_version,s.version,s.linked,r.id as revision_id,r.values,r.variants from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.product_id=? and s.deleted_at is null${includeUnlinked ? "" : " and s.linked=true"}`,
       [productId]
     )
-    return binding || null
+    return record || null
   }
 
   @InjectTransactionManager()
-  async reserveBinding(
-    productId: string,
-    templateId: string,
-    templateVersion: number,
-    expectedVersion: number,
+  async writeSpecification(
+    input: SpecificationWriteInput,
     @MedusaContext() context?: Context<EntityManager>
-  ) {
+  ): Promise<SpecificationWriteReceipt> {
     const manager = context!.transactionManager!
     await manager.execute("select pg_advisory_xact_lock(903241011)")
-    const before = await this.binding(productId, context)
-    if ((before?.version || 0) !== expectedVersion) conflict()
-    const after: ProductTemplateBinding = {
-      id: before?.id || `pab_${randomUUID()}`,
-      product_id: productId,
-      template_id: templateId,
-      template_version: templateVersion,
-      version: expectedVersion + 1,
+    const before = await this.specification(input.product_id, true, context)
+    if (
+      (before && !before.linked) ||
+      (before?.version || 0) !== input.expected_version
+    )
+      conflict()
+    const template = await this.revision(
+      input.template_id,
+      input.template_version,
+      context
+    )
+    if (
+      template.archived &&
+      (!before ||
+        before.template_id !== template.id ||
+        before.template_version !== template.version)
+    )
+      invalid("Archived templates cannot be assigned")
+    const issues = [
+      ...validateValues(
+        template.fields,
+        input.values,
+        "product",
+        input.complete
+      ),
+      ...Object.entries(input.variants).flatMap(([id, values]) =>
+        validateValues(
+          template.fields,
+          values,
+          "variant",
+          input.complete,
+          `variants.${id}.values`
+        )
+      ),
+    ]
+    if (issues.length)
+      invalid(
+        issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")
+      )
+    const id = before?.id || `pspec_${randomUUID()}`
+    const revisionId = `psrev_${randomUUID()}`
+    const version = (before?.version || 0) + 1
+    if (!before)
+      await manager.execute(
+        "insert into product_specification(id,product_id,template_id,template_version,version,linked) values(?,?,?,?,?,false)",
+        [
+          id,
+          input.product_id,
+          input.template_id,
+          input.template_version,
+          version,
+        ]
+      )
+    await manager.execute(
+      'insert into product_specification_revision(id,specification_id,template_id,template_version,version,"values",variants,actor_id) values(?,?,?,?,?,?::jsonb,?::jsonb,?)',
+      [
+        revisionId,
+        id,
+        input.template_id,
+        input.template_version,
+        version,
+        JSON.stringify(input.values),
+        JSON.stringify(input.variants),
+        input.actor_id,
+      ]
+    )
+    await manager.execute(
+      "update product_specification set template_id=?,template_version=?,version=?,current_revision_id=?,updated_at=now() where id=?",
+      [input.template_id, input.template_version, version, revisionId, id]
+    )
+    const created: SpecificationWriteReceipt["created_variants"] = []
+    for (const variantId of Object.keys(input.variants)) {
+      const [reference] = await manager.execute<
+        Array<{ id: string; specification_id: string }>
+      >(
+        "select id,specification_id from product_specification_variant where variant_id=? and deleted_at is null",
+        [variantId]
+      )
+      if (reference) {
+        if (reference.specification_id !== id)
+          invalid("A variant reference belongs to another specification")
+        continue
+      }
+      const referenceId = `psvar_${randomUUID()}`
+      await manager.execute(
+        "insert into product_specification_variant(id,variant_id,specification_id) values(?,?,?)",
+        [referenceId, variantId, id]
+      )
+      created.push({ id: referenceId, variant_id: variantId })
     }
-    if (before)
-      await manager.execute(
-        "update product_attribute_binding set template_id=?,template_version=?,version=?,updated_at=now() where id=?",
-        [templateId, templateVersion, after.version, before.id]
-      )
-    else
-      await manager.execute(
-        "insert into product_attribute_binding(id,product_id,template_id,template_version,version) values(?,?,?,?,?)",
-        [after.id, productId, templateId, templateVersion, after.version]
-      )
-    return { before, after }
+    return {
+      before,
+      after: {
+        id,
+        product_id: input.product_id,
+        template_id: input.template_id,
+        template_version: input.template_version,
+        version,
+        revision_id: revisionId,
+        values: input.values,
+        variants: input.variants,
+        linked: before?.linked || false,
+      },
+      created_variants: created,
+    }
   }
 
   @InjectTransactionManager()
-  async restoreBinding(
-    receipt: {
-      before: ProductTemplateBinding | null
-      after: ProductTemplateBinding
-    },
+  async confirmSpecification(
+    productId: string,
+    revisionId: string,
     @MedusaContext() context?: Context<EntityManager>
   ) {
     const manager = context!.transactionManager!
     await manager.execute("select pg_advisory_xact_lock(903241011)")
-    const current = await this.binding(receipt.after.product_id, context)
-    if (current?.version !== receipt.after.version) conflict()
-    if (receipt.before)
+    const current = await this.specification(productId, true, context)
+    if (!current || current.revision_id !== revisionId) return conflict()
+    await manager.execute(
+      "update product_specification set linked=true,updated_at=now() where id=?",
+      [current.id]
+    )
+  }
+
+  @InjectTransactionManager()
+  async restoreSpecification(
+    receipt: SpecificationWriteReceipt,
+    @MedusaContext() context?: Context<EntityManager>
+  ) {
+    const manager = context!.transactionManager!
+    await manager.execute("select pg_advisory_xact_lock(903241011)")
+    const current = await this.specification(
+      receipt.after.product_id,
+      true,
+      context
+    )
+    const compensationId = `psrev_restore_${receipt.after.revision_id}`
+    if (
+      (!current && !receipt.before) ||
+      current?.revision_id === compensationId
+    )
+      return
+    if (!current || current.revision_id !== receipt.after.revision_id)
+      return conflict()
+    if (receipt.before) {
+      const version = current.version + 1
       await manager.execute(
-        "update product_attribute_binding set template_id=?,template_version=?,version=?,updated_at=now() where id=?",
+        "insert into product_specification_revision(id,specification_id,template_id,template_version,version,\"values\",variants,actor_id) values(?,?,?,?,?,?::jsonb,?::jsonb,'system:compensation')",
+        [
+          compensationId,
+          current.id,
+          receipt.before.template_id,
+          receipt.before.template_version,
+          version,
+          JSON.stringify(receipt.before.values),
+          JSON.stringify(receipt.before.variants),
+        ]
+      )
+      await manager.execute(
+        "update product_specification set template_id=?,template_version=?,version=?,current_revision_id=?,updated_at=now() where id=?",
         [
           receipt.before.template_id,
           receipt.before.template_version,
-          receipt.before.version,
-          receipt.before.id,
+          version,
+          compensationId,
+          current.id,
         ]
       )
-    else
+      for (const reference of receipt.created_variants)
+        await manager.execute(
+          "delete from product_specification_variant where id=?",
+          [reference.id]
+        )
+    } else {
       await manager.execute(
-        "delete from product_attribute_binding where id=?",
-        [receipt.after.id]
+        "update product_specification set current_revision_id=null where id=?",
+        [current.id]
       )
+      await manager.execute(
+        "delete from product_specification_revision where specification_id=?",
+        [current.id]
+      )
+      await manager.execute(
+        "delete from product_specification_variant where specification_id=?",
+        [current.id]
+      )
+      await manager.execute("delete from product_specification where id=?", [
+        current.id,
+      ])
+    }
   }
 
   @InjectManager()
@@ -135,7 +285,7 @@ export default class ProductAttributesService extends MedusaService({
     const where = `deleted_at is null${query.include_archived ? "" : " and archived = false"}${query.q ? " and (name ilike ? or key ilike ?)" : ""}`
     const params = query.q ? [`%${query.q}%`, `%${query.q}%`] : []
     const templates = await manager.execute<TemplateSummary[]>(
-      `select id,key,name,version,source,archived from product_attribute_template where ${where} order by name,id offset ? limit ?`,
+      `select id,key,name,version,source,archived,(select definition->'category_ids' from product_attribute_revision r where r.template_id=product_attribute_template.id and r.version=product_attribute_template.version) as category_ids from product_attribute_template where ${where} order by name,id offset ? limit ?`,
       [...params, offset, limit]
     )
     const [count] = await manager.execute<Array<{ count: string }>>(
@@ -252,9 +402,17 @@ export default class ProductAttributesService extends MedusaService({
 
   @InjectTransactionManager()
   async synchronize(@MedusaContext() context?: Context<EntityManager>) {
+    return this.synchronizeDefinitions(this.configuration.templates, context)
+  }
+
+  @InjectTransactionManager()
+  async synchronizeDefinitions(
+    definitions: readonly TemplateDefinition[],
+    @MedusaContext() context?: Context<EntityManager>
+  ) {
+    const configured = resolveOptions({ templates: [...definitions] }).templates
     const manager = context!.transactionManager!
     await manager.execute("select pg_advisory_xact_lock(903241011)")
-    const configured = this.configuration.templates
     let changed = 0
     for (const definition of configured) {
       const [existing] = await manager.execute<TemplateSummary[]>(

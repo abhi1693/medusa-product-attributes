@@ -3,7 +3,6 @@ import { describe, expect, test, vi } from "vitest"
 import ProductAttributesService from "../../src/modules/product-attributes/service"
 import type {
   ProductAttributesOptions,
-  ProductTemplateBinding,
   TemplateDefinition,
   TemplateRevision,
 } from "../../src/types"
@@ -33,13 +32,6 @@ const revision: TemplateRevision = {
   source: "admin",
   archived: false,
 }
-const binding: ProductTemplateBinding = {
-  id: "pab_switch",
-  product_id: "prod_switch",
-  template_id: revision.id,
-  template_version: 2,
-  version: 3,
-}
 
 function harness(
   options: ProductAttributesOptions = {},
@@ -56,115 +48,49 @@ function harness(
 }
 
 describe("template service database and revision boundaries", () => {
-  test("validates options on construction and reads bindings through the supplied context", async () => {
+  test("synchronizes app-resolved definitions without mutating module configuration or caller data", async () => {
+    const h = harness({ templates: [definition] })
+    const resolved = {
+      ...definition,
+      name: " Resolved switch ",
+      category_ids: ["pcat_native_resolved"],
+    }
+    const snapshot = structuredClone(resolved)
+    expect(
+      await h.service.synchronizeDefinitions([resolved], h.context)
+    ).toEqual({ changed: 1 })
+    const persisted = JSON.parse(h.execute.mock.calls[3][1][3])
+    expect(persisted.name).toBe("Resolved switch")
+    expect(persisted.category_ids).toEqual(["pcat_native_resolved"])
+    expect(h.service.configuration.templates[0].name).toBe(definition.name)
+    expect(h.service.configuration.templates[0].category_ids).toEqual([])
+    expect(resolved).toEqual(snapshot)
+    const invalid = harness()
+    await expect(
+      invalid.service.synchronizeDefinitions(
+        [definition, definition],
+        invalid.context
+      )
+    ).rejects.toThrow("unique")
+    await expect(
+      invalid.service.synchronizeDefinitions(
+        [{ ...definition, fields: [] }],
+        invalid.context
+      )
+    ).rejects.toThrow()
+    expect(invalid.execute).not.toHaveBeenCalled()
+  })
+  test("validates module options on construction", () => {
     expect(new ProductAttributesService({}).configuration.metadata_key).toBe(
       "product_attributes"
     )
     expect(
       () => new ProductAttributesService({}, { metadata_key: "bad-key" })
     ).toThrow()
-    const h = harness({ metadata_key: "specifications" }, [binding], [])
-    expect(h.service.configuration.metadata_key).toBe("specifications")
-    expect(await h.service.binding(binding.product_id, h.context)).toEqual(
-      binding
-    )
     expect(
-      await h.service.binding("prod_unassigned", { manager: h.manager } as any)
-    ).toBeNull()
-    expect(h.execute.mock.calls.map(([, params]) => params)).toEqual([
-      [binding.product_id],
-      ["prod_unassigned"],
-    ])
-  })
-
-  test("reserves new and existing bindings under a lock and rejects stale reservations", async () => {
-    const created = harness({}, [], [])
-    const receipt = await created.service.reserveBinding(
-      "prod_switch",
-      revision.id,
-      3,
-      0,
-      created.context
-    )
-    expect(receipt.before).toBeNull()
-    expect(receipt.after).toEqual({
-      id: expect.stringMatching(/^pab_/),
-      product_id: "prod_switch",
-      template_id: revision.id,
-      template_version: 3,
-      version: 1,
-    })
-    expect(created.execute.mock.calls[0][0]).toContain("pg_advisory_xact_lock")
-    expect(created.execute.mock.calls[2][1]).toEqual([
-      receipt.after.id,
-      "prod_switch",
-      revision.id,
-      3,
-      1,
-    ])
-    const updated = harness({}, [], [binding])
-    expect(
-      await updated.service.reserveBinding(
-        "prod_switch",
-        revision.id,
-        3,
-        3,
-        updated.context
-      )
-    ).toEqual({
-      before: binding,
-      after: { ...binding, template_version: 3, version: 4 },
-    })
-    expect(updated.execute.mock.calls[2][1]).toEqual([
-      revision.id,
-      3,
-      4,
-      binding.id,
-    ])
-    for (const current of [[], [binding]]) {
-      const stale = harness({}, [], current)
-      await expect(
-        stale.service.reserveBinding(
-          "prod_switch",
-          revision.id,
-          3,
-          2,
-          stale.context
-        )
-      ).rejects.toMatchObject({ type: MedusaError.Types.CONFLICT })
-      expect(stale.execute).toHaveBeenCalledTimes(2)
-    }
-  })
-
-  test("compensates only the exact reserved revision and preserves intervening changes", async () => {
-    const after = { ...binding, template_version: 3, version: 4 }
-    const existing = harness({}, [], [after])
-    await existing.service.restoreBinding(
-      { before: binding, after },
-      existing.context
-    )
-    expect(existing.execute.mock.calls[2][1]).toEqual([
-      binding.template_id,
-      binding.template_version,
-      binding.version,
-      binding.id,
-    ])
-    const created = harness({}, [], [after])
-    await created.service.restoreBinding(
-      { before: null, after },
-      created.context
-    )
-    expect(created.execute.mock.calls[2]).toEqual([
-      expect.stringMatching(/^delete from product_attribute_binding/),
-      [after.id],
-    ])
-    for (const current of [[], [binding]]) {
-      const stale = harness({}, [], current)
-      await expect(
-        stale.service.restoreBinding({ before: binding, after }, stale.context)
-      ).rejects.toMatchObject({ type: MedusaError.Types.CONFLICT })
-      expect(stale.execute).toHaveBeenCalledTimes(2)
-    }
+      new ProductAttributesService({}, { metadata_key: "specifications" })
+        .configuration.metadata_key
+    ).toBe("specifications")
   })
 
   test("paginates active templates with parameterized search and a numeric total", async () => {

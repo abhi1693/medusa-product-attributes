@@ -1,5 +1,12 @@
-import type { MedusaContainer } from "@medusajs/framework/types"
-import { MedusaError, Modules } from "@medusajs/framework/utils"
+import type {
+  IProductModuleService,
+  MedusaContainer,
+} from "@medusajs/framework/types"
+import {
+  ContainerRegistrationKeys,
+  MedusaError,
+  Modules,
+} from "@medusajs/framework/utils"
 import {
   createStep,
   StepResponse,
@@ -15,23 +22,26 @@ import { PRODUCT_ATTRIBUTES } from "../constants"
 import type ProductAttributesService from "../modules/product-attributes/service"
 import { conflict } from "../modules/product-attributes/service"
 import type {
-  ProductTemplateBinding,
+  AttributeValues,
   ProductValuesInput,
   TemplateAssignmentInput,
+  SpecificationWriteInput,
+  SpecificationWriteReceipt,
 } from "../types"
 import { mergeValues } from "../validation"
 import {
-  variantEnvelope,
   productIssues,
   productState,
   productView,
-  versionOf,
+  specificationSnapshot,
+  specificationVersion,
 } from "./read"
 
-export type AttributesMutation = { product_id: string } & (
-  | { assignment: TemplateAssignmentInput; values?: never }
+export type AttributesMutation = { product_id: string; actor_id?: string } & (
+  | { assignment: TemplateAssignmentInput; values?: ProductValuesInput }
   | { assignment?: never; values: ProductValuesInput }
 )
+
 export async function prepareAttributesMutation(
   input: AttributesMutation,
   { container }: { container: MedusaContainer }
@@ -39,13 +49,14 @@ export async function prepareAttributesMutation(
   const {
     product,
     service,
-    binding,
-    namespace,
-    stored,
+    specification,
     template: previous,
   } = await productState(container, input.product_id)
-  const request = input.assignment || input.values
-  if (versionOf(product.updated_at, binding?.version || 0) !== request.version)
+  const currentVersion = specificationVersion(specification)
+  if (
+    (input.assignment && input.assignment.version !== currentVersion) ||
+    (input.values && input.values.version !== currentVersion)
+  )
     conflict()
   const template = input.assignment
     ? await service.revision(
@@ -56,62 +67,166 @@ export async function prepareAttributesMutation(
   if (!template)
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Assign a template before editing attributes"
+      "Assign a template before editing specifications"
     )
   if (input.assignment && template.archived)
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
       "Archived templates cannot be assigned"
     )
-  const next = {
-    template_id: template.id,
-    template_version: template.version,
-    version: (binding?.version || 0) + 1,
-    values: mergeValues(stored?.values || {}, input.values?.values || {}),
-  }
   const patches = input.values?.variants || []
   if (new Set(patches.map((patch) => patch.id)).size !== patches.length)
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
       "Variant IDs must be unique"
     )
-  const variants = (product.variants || []).map((variant) => {
-    const patch = patches.find((entry) => entry.id === variant.id)
-    const previous = variantEnvelope(variant.metadata, namespace)
-    if (
-      patch &&
-      versionOf(variant.updated_at, previous?.version || 0) !== patch.version
-    )
+  const variants: Record<string, AttributeValues> = {}
+  for (const variant of product.variants || []) {
+    const patch = patches.find((patch) => patch.id === variant.id)
+    if (patch && patch.version !== specificationVersion(specification))
       conflict()
-    return {
-      ...variant,
-      metadata: {
-        ...variant.metadata,
-        [namespace]: {
-          version: (previous?.version || 0) + 1,
-          values: mergeValues(previous?.values || {}, patch?.values || {}),
-        },
-      },
-    }
-  })
-  if (
-    patches.some(
-      (patch) => !variants.some((variant) => variant.id === patch.id)
+    variants[variant.id] = mergeValues(
+      specification?.variants[variant.id] || {},
+      patch?.values || {}
     )
-  )
+  }
+  if (patches.some((patch) => !Object.hasOwn(variants, patch.id)))
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
       "A variant does not belong to this product"
     )
-  const candidate = {
-    ...product,
-    metadata: { ...product.metadata, [namespace]: next },
-    variants,
-  }
+  const values = mergeValues(
+    specification?.values || {},
+    input.values?.values || {}
+  )
+  const complete = product.status === "published"
   const issues = productIssues(
     template,
-    candidate,
-    namespace,
+    {
+      values,
+      variants: Object.entries(variants).map(([id, values]) => ({
+        id,
+        values,
+      })),
+    },
+    complete
+  )
+  if (issues.length)
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")
+    )
+  return new StepResponse<SpecificationWriteInput>({
+    product_id: product.id,
+    template_id: template.id,
+    template_version: template.version,
+    expected_version: specification?.version || 0,
+    complete,
+    values,
+    variants,
+    actor_id: input.actor_id || "system:workflow",
+  })
+}
+const prepare = createStep(
+  "prepare-product-specification",
+  prepareAttributesMutation
+)
+export async function writeSpecification(
+  input: SpecificationWriteInput,
+  { container }: { container: MedusaContainer }
+) {
+  const receipt = await container
+    .resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
+    .writeSpecification(input)
+  return new StepResponse(receipt, receipt)
+}
+export async function restoreSpecification(
+  receipt: SpecificationWriteReceipt | undefined,
+  { container }: { container: MedusaContainer }
+) {
+  if (receipt)
+    await container
+      .resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
+      .restoreSpecification(receipt)
+}
+const write = createStep(
+  "write-owned-product-specification",
+  writeSpecification,
+  restoreSpecification
+)
+export function specificationLinks({
+  receipt,
+}: {
+  receipt: SpecificationWriteReceipt
+}) {
+  return [
+    ...(!receipt.before
+      ? [
+          {
+            [Modules.PRODUCT]: { product_id: receipt.after.product_id },
+            [PRODUCT_ATTRIBUTES]: {
+              product_specification_id: receipt.after.id,
+            },
+          },
+        ]
+      : []),
+    ...receipt.created_variants.map((reference) => ({
+      [Modules.PRODUCT]: { product_variant_id: reference.variant_id },
+      [PRODUCT_ATTRIBUTES]: { product_specification_variant_id: reference.id },
+    })),
+  ]
+}
+export type SpecificationLinks = ReturnType<typeof specificationLinks>
+export async function createSpecificationLinks(
+  input: SpecificationLinks,
+  { container }: { container: MedusaContainer }
+) {
+  try {
+    if (input.length)
+      await container.resolve(ContainerRegistrationKeys.LINK).create(input)
+  } catch (error) {
+    const message =
+      error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : "Unable to link product specifications"
+    return StepResponse.permanentFailure(message, input)
+  }
+  return new StepResponse(input, input)
+}
+export async function dismissSpecificationLinks(
+  input: SpecificationLinks | undefined,
+  { container }: { container: MedusaContainer }
+) {
+  if (input?.length)
+    await container.resolve(ContainerRegistrationKeys.LINK).dismiss(input)
+}
+const createLinks = createStep(
+  "create-product-specification-links",
+  createSpecificationLinks,
+  dismissSpecificationLinks
+)
+export const confirmationInput = ({
+  receipt,
+}: {
+  receipt: SpecificationWriteReceipt
+}) => receipt.after
+export async function confirmSpecification(
+  input: SpecificationWriteReceipt["after"],
+  { container }: { container: MedusaContainer }
+) {
+  const products = container.resolve<IProductModuleService>(Modules.PRODUCT)
+  const product = await products.retrieveProduct(input.product_id, {
+    relations: ["variants"],
+  })
+  const service =
+    container.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
+  const template = await service.revision(
+    input.template_id,
+    input.template_version
+  )
+  const issues = productIssues(
+    template,
+    specificationSnapshot(product, input),
     product.status === "published"
   )
   if (issues.length)
@@ -119,98 +234,27 @@ export async function prepareAttributesMutation(
       MedusaError.Types.INVALID_DATA,
       issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")
     )
-  return new StepResponse({
-    product_id: product.id,
-    products: [{ id: product.id, metadata: { [namespace]: next } }],
-    variants: variants
-      .filter((variant) => patches.some((patch) => patch.id === variant.id))
-      .map((variant) => ({
-        id: variant.id,
-        metadata: { [namespace]: variant.metadata[namespace] },
-      })),
-    template_id: template.id,
-    template_version: template.version,
-    binding_version: binding?.version || 0,
-  })
+  await service.confirmSpecification(input.product_id, input.revision_id)
+  return new StepResponse(input.product_id)
 }
-
-const prepare = createStep(
-  "prepare-product-attributes",
-  prepareAttributesMutation
+const confirm = createStep(
+  "confirm-product-specification-links",
+  confirmSpecification
 )
-
-export async function reserveAttributesBinding(
-  input: {
-    product_id: string
-    template_id: string
-    template_version: number
-    binding_version: number
-  },
-  { container }: { container: MedusaContainer }
-) {
-  const receipt = await container
-    .resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
-    .reserveBinding(
-      input.product_id,
-      input.template_id,
-      input.template_version,
-      input.binding_version
-    )
-  return new StepResponse(receipt.after.product_id, receipt)
-}
-
-export async function restoreAttributesBinding(
-  receipt:
-    | { before: ProductTemplateBinding | null; after: ProductTemplateBinding }
-    | undefined,
-  { container }: { container: MedusaContainer }
-) {
-  if (receipt)
-    await container
-      .resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
-      .restoreBinding(receipt)
-}
-
-const reserve = createStep(
-  "reserve-product-template-binding",
-  reserveAttributesBinding,
-  restoreAttributesBinding
-)
-
-export const productMutationInput = ({
-  plan,
-}: {
-  plan: Awaited<ReturnType<typeof prepareAttributesMutation>>["output"]
-}) => ({ products: plan.products })
-export const variantMutationInput = ({
-  plan,
-}: {
-  plan: Awaited<ReturnType<typeof prepareAttributesMutation>>["output"]
-}) => ({ product_variants: plan.variants })
-
 export const writeAttributesWorkflow = createWorkflow(
   "write-product-attributes",
   (input: AttributesMutation) => {
-    const plan = prepare(input)
-    const reserved = reserve(plan)
-    // The metadata update depends on the binding reservation. Native compensation
-    // restores product/variant snapshots before the reservation is compensated.
-    const productInput = transform({ plan, reserved }, productMutationInput)
-    const products = updateProductsWorkflow
-      .runAsStep({ input: productInput })
-      .config({ name: "write-product-attribute-metadata" })
-    const variantInput = transform({ plan, products }, variantMutationInput)
-    const variants = updateProductVariantsWorkflow
-      .runAsStep({ input: variantInput })
-      .config({ name: "write-variant-attribute-metadata" })
-    return new WorkflowResponse({ product_id: reserved, products, variants })
+    const receipt = write(prepare(input))
+    const links = createLinks(transform({ receipt }, specificationLinks))
+    const productId = confirm(transform({ receipt, links }, confirmationInput))
+    return new WorkflowResponse({ product_id: productId })
   }
 )
-
 export async function mutateProductAttributes(
   container: MedusaContainer,
   input: AttributesMutation,
-  canWrite = true
+  canWrite = true,
+  actorId = "system:workflow"
 ) {
   const locking = container.resolve<{
     execute<T>(
@@ -222,9 +266,55 @@ export async function mutateProductAttributes(
   return locking.execute(
     `product-attributes:${input.product_id}`,
     async () => {
-      await writeAttributesWorkflow(container).run({ input })
+      await writeAttributesWorkflow(container).run({
+        input: { ...input, actor_id: actorId },
+      })
       return productView(container, input.product_id, canWrite)
     },
     { timeout: 10 }
   )
+}
+
+// Explicit, one-way export. Its native workflow may fail or become stale without
+// changing the authoritative immutable specification revision.
+export async function exportProductAttributesMetadata(
+  container: MedusaContainer,
+  productId: string,
+  version: string
+) {
+  const state = await productState(container, productId)
+  if (!state.specification || !state.template)
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Assign a template before exporting specifications"
+    )
+  if (specificationVersion(state.specification) !== version) conflict()
+  const source = state.specification
+  const projection = {
+    revision_id: source.revision_id,
+    template_id: source.template_id,
+    template_version: source.template_version,
+    values: source.values,
+  }
+  await updateProductsWorkflow(container).run({
+    input: {
+      products: [
+        { id: productId, metadata: { [state.namespace]: projection } },
+      ],
+    },
+  })
+  await updateProductVariantsWorkflow(container).run({
+    input: {
+      product_variants: (state.product.variants || []).map((variant) => ({
+        id: variant.id,
+        metadata: {
+          [state.namespace]: {
+            revision_id: source.revision_id,
+            values: source.variants[variant.id] || {},
+          },
+        },
+      })),
+    },
+  })
+  return { revision_id: source.revision_id }
 }

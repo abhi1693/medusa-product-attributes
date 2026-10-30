@@ -4,9 +4,14 @@ import type {
   ExecArgs,
   IAuthModuleService,
   IUserModuleService,
+  IApiKeyModuleService,
+  ISalesChannelModuleService,
 } from "@medusajs/framework/types"
-import { Modules } from "@medusajs/framework/utils"
-import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
+import { ApiKeyType, Modules } from "@medusajs/framework/utils"
+import {
+  createProductsWorkflow,
+  linkSalesChannelsToApiKeyWorkflow,
+} from "@medusajs/medusa/core-flows"
 import { ACCESS_CONTROL } from "@abhi1693/medusa-rbac/modules/access-control"
 import type AccessControlService from "@abhi1693/medusa-rbac/service"
 
@@ -82,9 +87,28 @@ export default async function seed({ container }: ExecArgs) {
       ],
     },
   })
+  const channels = await container
+    .resolve<ISalesChannelModuleService>(Modules.SALES_CHANNEL)
+    .createSalesChannels([
+      { name: "Attributes public fixture channel" },
+      { name: "Other attributes fixture channel" },
+    ])
+  const keys = container.resolve<IApiKeyModuleService>(Modules.API_KEY)
+  const storefront = []
+  for (const channel of channels) {
+    const key = await keys.createApiKeys({
+      title: channel.name,
+      type: ApiKeyType.PUBLISHABLE,
+      created_by: credentials.administrator.id,
+    })
+    await linkSalesChannelsToApiKeyWorkflow(container).run({
+      input: { id: key.id, add: [channel.id] },
+    })
+    storefront.push({ channel_id: channel.id, token: key.token })
+  }
   writeFileSync(
     process.env.ATTRIBUTES_FIXTURE_PATH || "/plugin/artifacts/fixtures.json",
-    JSON.stringify({ users: credentials, product: result[0] }),
+    JSON.stringify({ users: credentials, product: result[0], storefront }),
     { mode: 0o600 }
   )
   console.info("Created isolated browser fixtures; credentials saved locally")

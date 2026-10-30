@@ -1,73 +1,55 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import {
-  envelope,
-  variantEnvelope,
   productState,
   productIssues,
   validateProduct,
   enforceProduct,
   productView,
-  versionOf,
+  specificationVersion,
+  specificationSnapshot,
 } from "../../src/workflows/read"
-import { harness, template, timestamp } from "../helpers/backend"
+import { harness, template } from "../helpers/backend"
 
-describe("owning-module reads and assignment integrity", () => {
-  it("rejects malformed namespace envelopes and binding mismatches", async () => {
-    expect(() =>
-      envelope({ product_attributes: null }, "product_attributes")
-    ).toThrow("Invalid product")
-    expect(() =>
-      variantEnvelope({ product_attributes: null }, "product_attributes")
-    ).toThrow("Invalid variant")
-    for (const mismatch of [
-      null,
-      { template_id: "other", template_version: 1, version: 1 },
-      { template_id: template.id, template_version: 2, version: 1 },
-      { template_id: template.id, template_version: 1, version: 2 },
-    ]) {
-      const h = harness()
-      h.service.binding.mockResolvedValue(mismatch)
-      await expect(productState(h.container, h.product.id)).rejects.toThrow(
-        "does not match"
-      )
-    }
-    const h = harness(false)
-    h.service.binding.mockResolvedValue({
-      template_id: template.id,
-      template_version: 1,
-      version: 1,
-    })
-    await expect(productState(h.container, h.product.id)).rejects.toThrow(
-      "does not match"
-    )
-    const valid = harness()
-    expect(
-      (await productState(valid.container, valid.product.id)).template
-    ).toEqual(template)
-    expect(valid.products.retrieveProduct).toHaveBeenCalledWith(
-      valid.product.id,
-      { relations: ["variants"] }
-    )
-  })
-  it("supports generic unassigned products and refuses variant metadata before assignment", async () => {
-    const h = harness(false)
-    expect(await validateProduct(h.container, h.product.id)).toEqual([])
-    h.product.variants = undefined
-    expect(await validateProduct(h.container, h.product.id)).toEqual([])
-    h.product.variants = [
-      {
-        id: "var",
-        metadata: { product_attributes: { version: 1, values: {} } },
-      },
-    ]
-    await expect(validateProduct(h.container, h.product.id)).rejects.toThrow(
-      "Assign a product template"
-    )
-  })
-  it("accepts partial drafts and enforces required Product/Variant values on publication", async () => {
+describe("owning-module specification reads", () => {
+  it("loads owning native identity and the current immutable owned revision", async () => {
     const h = harness()
-    h.product.metadata.product_attributes.values = {}
-    h.product.variants[0].metadata.product_attributes.values = {}
+    expect(
+      (await productState(h.container, h.product.id)).specification
+    ).toEqual(h.specification)
+    expect(h.products.retrieveProduct).toHaveBeenCalledWith(h.product.id, {
+      relations: ["variants", "categories"],
+    })
+    h.product.metadata = {
+      product_attributes: { template_id: "forged", values: { model: 42 } },
+    }
+    expect((await productView(h.container, h.product.id, true)).values).toEqual(
+      { model: "Example" }
+    )
+  })
+  it("supports unassigned products independently of arbitrary native metadata", async () => {
+    const h = harness(false)
+    h.product.metadata = { product_attributes: null }
+    expect(await validateProduct(h.container, h.product.id)).toEqual([])
+    expect(specificationVersion(null)).toBe("unassigned")
+    const view = await productView(h.container, h.product.id, false)
+    expect(view).toMatchObject({
+      template: null,
+      assignment_version: 0,
+      version: "unassigned",
+      values: {},
+      validation: [],
+      can_write: false,
+      variants: [{ values: {}, version: "unassigned" }],
+    })
+    h.product.variants = undefined
+    expect(
+      (await productView(h.container, h.product.id, true)).variants
+    ).toEqual([])
+  })
+  it("allows partial drafts while native publication and complete reads require current live variants", async () => {
+    const h = harness()
+    h.specification!.values = {}
+    h.specification!.variants = {}
     expect(await validateProduct(h.container, h.product.id)).toEqual([])
     expect(await validateProduct(h.container, h.product.id, true)).toHaveLength(
       2
@@ -79,41 +61,43 @@ describe("owning-module reads and assignment integrity", () => {
     await expect(
       enforceProduct(h.container, h.product.id, false)
     ).resolves.toBeUndefined()
-    expect(productIssues(template, {}, "product_attributes", false)).toEqual([])
+    expect(
+      productIssues(template, { values: {}, variants: [] }, false)
+    ).toEqual([])
+    expect(specificationSnapshot({}, h.specification!)).toEqual({
+      values: {},
+      variants: [],
+    })
   })
-  it("reports stable scoped paths and complete Admin validation while drafts remain editable", async () => {
+  it("uses revision versions, ignores native timestamp churn, and suggests only explicit category matches", async () => {
     const h = harness()
-    const result = await productView(h.container, h.product.id, false)
-    expect(result).toMatchObject({
-      product_id: h.product.id,
-      template,
-      assignment_version: 1,
-      values: { model: "Example" },
-      can_write: false,
-      variants: [
-        { id: "variant_test", values: { ports: 8 }, version: `${timestamp}:1` },
+    h.product.categories = [{ id: "cat_network" }]
+    h.service.page.mockResolvedValue({
+      templates: [
+        { ...template, category_ids: ["cat_network"] },
+        { ...template, id: "other", category_ids: [] },
+        { ...template, id: "none", category_ids: undefined },
       ],
     })
-    expect(result.version).toBe(`${timestamp}:1`)
-    expect(versionOf(new Date(timestamp))).toBe(`${timestamp}:0`)
-    h.product.variants[0].metadata = {}
+    let view = await productView(h.container, h.product.id, true)
+    expect(view.version).toBe("psrev_1")
+    expect(view.variants[0]).toMatchObject({
+      version: "psrev_1",
+      values: { ports: 8 },
+    })
+    expect(view.templates.map((item) => item.recommended)).toEqual([
+      true,
+      false,
+      false,
+    ])
+    h.product.updated_at = "2030-01-01T00:00:00Z"
+    h.product.categories = undefined
+    view = await productView(h.container, h.product.id, true)
+    expect(view.version).toBe("psrev_1")
+    expect(view.templates.every((item) => !item.recommended)).toBe(true)
+    h.product.variants.push({ id: "new", title: "New" })
     expect(
       (await productView(h.container, h.product.id, true)).validation[0].path
-    ).toBe("variants.variant_test.values.ports")
-    const unassigned = harness(false)
-    expect(
-      await productView(unassigned.container, unassigned.product.id, true)
-    ).toMatchObject({
-      template: null,
-      assignment_version: 0,
-      values: {},
-      validation: [],
-      variants: [{ values: {} }],
-    })
-    unassigned.product.variants = undefined
-    expect(
-      (await productView(unassigned.container, unassigned.product.id, true))
-        .variants
-    ).toEqual([])
+    ).toBe("variants.new.values.ports")
   })
 })

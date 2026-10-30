@@ -144,7 +144,7 @@ export const TemplateProducts = ({ templateId }: { templateId: string }) => {
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
           <div>
             <Text size="small" className="text-ui-fg-subtle">
-              {query.data.count} assignments
+              Assignments: {query.data.count}
             </Text>
             <Text size="xsmall" className="mt-1 text-ui-fg-muted">
               Totals may include products that are unavailable to your account.

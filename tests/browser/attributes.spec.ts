@@ -14,6 +14,7 @@ const fixture = JSON.parse(
 ) as {
   users: Record<string, { id: string; email: string; password: string }>
   product: { id: string; variants: Array<{ id: string }> }
+  storefront: Array<{ channel_id: string; token: string }>
 }
 const route = "/app/settings/product-attributes"
 const root = "/admin/product-attributes"
@@ -83,7 +84,7 @@ test("create and revise a template through native Admin controls", async ({
     page.getByText("browser_specification · Version 2", { exact: true })
   ).toBeVisible()
   await expect(
-    page.getByText("Version 1 · 1 fields", { exact: true })
+    page.getByText("Version 1 · Fields: 1", { exact: true })
   ).toBeVisible()
   await page.screenshot({
     path: "test-results/template-detail.png",
@@ -239,6 +240,21 @@ test("typed values, stale writes and native publication preserve specification r
   )
   await page.reload()
   await expect(page.getByText("24 Gbps", { exact: true })).toBeVisible()
+  await page.goto(
+    `/app/products/${fixture.product.id}/variants/${fixture.product.variants[0].id}`
+  )
+  const variantRegion = page.getByRole("region", {
+    name: "Variant specifications",
+    exact: true,
+  })
+  await expect(variantRegion).toBeVisible()
+  await variantRegion.getByRole("button", { name: "Edit", exact: true }).click()
+  const variantEditor = page.getByRole("dialog")
+  await variantEditor.getByLabel("Finish", { exact: true }).click()
+  await page.getByRole("option", { name: "Black", exact: true }).click()
+  await variantEditor.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(variantEditor).toHaveCount(0)
+  await expect(variantRegion.getByText("Black", { exact: true })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await page.screenshot({
@@ -312,6 +328,7 @@ test("Store attributes require a published product in the publishable key's chan
       {
         title: "Default",
         manage_inventory: false,
+        prices: [],
         options: { Configuration: "Default" },
       },
     ],
@@ -340,30 +357,13 @@ test("Store attributes require a published product in the publishable key's chan
     template_id: template.id,
     template_version: template.version,
   })
-  const { sales_channel: channel } = await post("/admin/sales-channels", {
-    name: "Attributes public channel",
-  })
-  await post(`/admin/sales-channels/${channel.id}/products`, {
+  const [storefront, otherStorefront] = fixture.storefront
+  await post(`/admin/sales-channels/${storefront.channel_id}/products`, {
     add: [product.id],
   })
-  const { sales_channel: otherChannel } = await post("/admin/sales-channels", {
-    name: "Other attributes channel",
-  })
-  const { api_key: key } = await post("/admin/api-keys", {
-    title: "Attributes storefront fixture",
-    type: "publishable",
-  })
-  const { api_key: otherKey } = await post("/admin/api-keys", {
-    title: "Other storefront fixture",
-    type: "publishable",
-  })
-  await post(`/admin/api-keys/${key.id}/sales-channels`, { add: [channel.id] })
-  await post(`/admin/api-keys/${otherKey.id}/sales-channels`, {
-    add: [otherChannel.id],
-  })
   const path = `/store/products/${product.id}/attributes`
-  const correct = { "x-publishable-api-key": key.token }
-  const wrong = { "x-publishable-api-key": otherKey.token }
+  const correct = { "x-publishable-api-key": storefront.token }
+  const wrong = { "x-publishable-api-key": otherStorefront.token }
   expect((await request.get(path, { headers: correct })).status()).toBe(404)
   await post(`/admin/products/${product.id}`, { status: "published" })
   expect((await request.get(path, { headers: wrong })).status()).toBe(404)
@@ -374,4 +374,80 @@ test("Store attributes require a published product in the publishable key's chan
   expect(body.template.key).toBe("store_contract")
   expect(body.template.fields[0].comparable).toBe(true)
   expect((await request.get(path)).ok()).toBeFalsy()
+})
+
+test("template impact lists products pinned to earlier schema versions", async ({
+  page,
+  request,
+}) => {
+  const headers = await tokenFor(request)
+  const post = async (path: string, data: unknown) => {
+    const response = await request.post(path, { headers, data })
+    expect(response.ok(), `${path}: ${await response.text()}`).toBeTruthy()
+    return response.json()
+  }
+  const { product } = await post("/admin/products", {
+    title: "Template impact fixture",
+    status: "draft",
+    options: [{ title: "Configuration", values: ["Default"] }],
+    variants: [
+      {
+        title: "Default",
+        manage_inventory: false,
+        prices: [],
+        options: { Configuration: "Default" },
+      },
+    ],
+  })
+  const definition = {
+    key: "impact_fixture",
+    name: "Impact specifications",
+    fields: [
+      {
+        key: "model",
+        label: "Model",
+        type: "text",
+        scope: "product",
+        required: false,
+        searchable: false,
+        filterable: false,
+        comparable: true,
+      },
+    ],
+  }
+  const { template } = await post(`${root}/templates`, definition)
+  const state = await (
+    await request.get(`${root}/products/${product.id}`, { headers })
+  ).json()
+  await post(`${root}/products/${product.id}/assignment`, {
+    version: state.version,
+    template_id: template.id,
+    template_version: 1,
+  })
+  await post(`${root}/templates/${template.id}`, {
+    ...definition,
+    version: 1,
+    description: "New immutable version",
+  })
+  await login(page)
+  await page.goto(`${route}/${template.id}`)
+  const region = page.getByRole("region", {
+    name: "Assigned products",
+    exact: true,
+  })
+  await expect(
+    region.getByRole("link", { name: /Template impact fixture/ })
+  ).toBeVisible()
+  await expect(region.getByText("Version 1", { exact: true })).toBeVisible()
+  await expect(region.getByText("Version 2", { exact: true })).toBeVisible()
+  await region
+    .getByRole("checkbox", { name: "Earlier versions only", exact: true })
+    .check()
+  await expect(
+    region.getByText("Update available", { exact: true })
+  ).toBeVisible()
+  await page.screenshot({
+    path: "test-results/template-impact.png",
+    fullPage: true,
+  })
 })

@@ -79,6 +79,11 @@ export const createProductAttributesClient = (
         method: "POST",
         body,
       }),
+    exportMetadata: (id: string, version: string) =>
+      transport.fetch<{ revision_id: string }>(`${productPath(id)}/export`, {
+        method: "POST",
+        body: { version },
+      }),
     validate: (id: string) =>
       transport.fetch<{ validation: ValidationIssue[] }>(
         `${productPath(id)}/validate`,

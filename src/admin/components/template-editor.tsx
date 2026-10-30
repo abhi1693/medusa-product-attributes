@@ -12,7 +12,7 @@ import {
   Textarea,
   usePrompt,
 } from "@medusajs/ui"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type {
   AttributeField,
   AttributeType,
@@ -20,6 +20,7 @@ import type {
   TemplateRevision,
 } from "../../types"
 import { attributesApi, sdk } from "../lib/api"
+import { restoreFocus } from "../lib/focus"
 import { errorMessage } from "./feedback"
 
 const types: { value: AttributeType; label: string }[] = [
@@ -65,11 +66,26 @@ export const TemplateEditor = ({
   onSave: (draft: TemplateInput) => Promise<void>
 }) => {
   const [draft, setDraft] = useState(() => templateDraft(template, duplicate))
+  const [opener] = useState(() => document.activeElement)
+  const nameInput = useRef<HTMLInputElement>(null)
+  const reloadButton = useRef<HTMLButtonElement>(null)
+  const [focusAfterPending, setFocusAfterPending] = useState<
+    "name" | "reload"
+  >()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const [stale, setStale] = useState(false)
   const prompt = usePrompt()
   const [dirty, setDirty] = useState(false)
+  useEffect(() => {
+    if (!pending && focusAfterPending) {
+      restoreFocus(
+        focusAfterPending === "name" ? nameInput.current : reloadButton.current,
+        focusAfterPending !== "name"
+      )
+      setFocusAfterPending(undefined)
+    }
+  }, [pending, focusAfterPending])
   const categories = useComboboxData({
     queryKey: ["product-attributes", "categories"],
     queryFn: (params) => sdk.admin.productCategory.list(params),
@@ -94,6 +110,7 @@ export const TemplateEditor = ({
     })
   const close = async () => {
     if (pending) return
+    const previouslyFocused = document.activeElement
     if (
       dirty &&
       !(await prompt({
@@ -102,8 +119,10 @@ export const TemplateEditor = ({
         confirmText: "Discard",
         cancelText: "Keep editing",
       }))
-    )
+    ) {
+      restoreFocus(previouslyFocused)
       return
+    }
     onClose()
   }
   const submit = async (event: React.FormEvent) => {
@@ -125,6 +144,7 @@ export const TemplateEditor = ({
     }
   }
   const reload = async () => {
+    const previouslyFocused = document.activeElement
     if (
       !(await prompt({
         title: "Reload template?",
@@ -133,8 +153,10 @@ export const TemplateEditor = ({
         confirmText: "Reload",
         cancelText: "Keep editing",
       }))
-    )
+    ) {
+      restoreFocus(previouslyFocused)
       return
+    }
     setPending(true)
     try {
       const latest = await attributesApi.template(template!.id)
@@ -142,8 +164,10 @@ export const TemplateEditor = ({
       setDirty(false)
       setStale(false)
       setError(undefined)
+      setFocusAfterPending("name")
     } catch (failure) {
       setError(errorMessage(failure))
+      setFocusAfterPending("reload")
     } finally {
       setPending(false)
     }
@@ -155,7 +179,12 @@ export const TemplateEditor = ({
         void close()
       }}
     >
-      <FocusModal.Content>
+      <FocusModal.Content
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          restoreFocus(opener)
+        }}
+      >
         <FocusModal.Header>
           <FocusModal.Title>
             {template && !duplicate
@@ -170,6 +199,29 @@ export const TemplateEditor = ({
           onSubmit={submit}
           className="flex flex-1 flex-col overflow-hidden"
         >
+          {error && (
+            <div
+              role="alert"
+              className="mx-4 mt-4 flex shrink-0 flex-col gap-2 rounded-lg border border-ui-border-error bg-ui-bg-base p-3 text-sm text-ui-fg-error sm:mx-8"
+            >
+              <span>{error}</span>
+              {stale && (
+                <Button
+                  size="small"
+                  type="button"
+                  variant="secondary"
+                  className="w-fit"
+                  ref={reloadButton}
+                  disabled={pending}
+                  onClick={() => {
+                    void reload()
+                  }}
+                >
+                  Reload latest
+                </Button>
+              )}
+            </div>
+          )}
           <FocusModal.Body className="overflow-y-auto">
             <fieldset
               disabled={pending}
@@ -186,33 +238,12 @@ export const TemplateEditor = ({
                   keep their current version.
                 </Text>
               </div>
-              {error && (
-                <div
-                  role="alert"
-                  className="rounded-lg border border-ui-border-error bg-ui-bg-base p-3 text-sm text-ui-fg-error"
-                >
-                  {error}
-                  {stale && (
-                    <Button
-                      size="small"
-                      type="button"
-                      variant="secondary"
-                      className="mt-2"
-                      disabled={pending}
-                      onClick={() => {
-                        void reload()
-                      }}
-                    >
-                      Reload latest
-                    </Button>
-                  )}
-                </div>
-              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="template-name">Name</Label>
                   <Input
                     id="template-name"
+                    ref={nameInput}
                     required
                     value={draft.name}
                     onChange={(event) => change({ name: event.target.value })}

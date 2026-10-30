@@ -15,13 +15,13 @@ Research date: 2026-10-30. Target: Medusa 2.22.2, Medusa UI 4.2.9 and Vite 7.3.7
 
 ## Storage and evolution
 
-Product and variant specification values belong in a namespaced native metadata document. Template definitions and immutable schema revisions belong in this module. Product assignment is explicit and pins a revision; a schema edit must not silently reinterpret existing product data. Merchant brands, categories and code-managed template declarations belong in application configuration.
+The accepted design keeps product and variant specification values in immutable module-owned revisions with an atomic current pointer and public native Product/Variant links. Native metadata is an optional one-way projection. Product assignment is explicit and pins a schema revision; a schema edit must not silently reinterpret existing product data. Merchant brands, categories and code-managed template declarations belong in application configuration.
 
-Native metadata is already readable through commerce APIs. Attribute values must be safe for storefront disclosure. Search/filter/comparison flags describe downstream indexing and presentation; they are not confidentiality controls or a search engine implementation.
+Store readers receive only complete current revisions for published, channel-eligible native products and current native variants. There is no implicit last-published fallback. Storefront values and optional metadata exports must be safe for public disclosure. Search/filter/comparison flags describe downstream indexing and presentation; they are not confidentiality controls or a search engine implementation.
 
 Drafts may be incomplete so editors can work incrementally. Publication requires complete applicable values. A publication gate checks specifications; it does not implement editorial review, approval, immutable content revisions or a publishing scheduler.
 
-Native metadata merging is shallow: replacing the reserved namespace can replace its complete value. Preserve unrelated metadata and validate the whole candidate document. Inspect native direct, batch and import workflows separately before claiming coverage. Direct module calls from trusted scripts remain an explicit application integration boundary.
+Native workflow compensation can restore an older full metadata snapshot after a separate successful metadata write. Real interleaving proved this; see the [storage decision](storage-decision.md). Module-owned revisions avoid that loss. Any optional metadata export must preserve unrelated metadata and must not make projection failure roll back authoritative revisions. Inspect native direct, batch and import workflows separately before claiming coverage. Direct module calls from trusted scripts remain an explicit application integration boundary.
 
 ## Design requirements
 

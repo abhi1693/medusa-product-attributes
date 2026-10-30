@@ -313,3 +313,20 @@ test("product impact permission denial does not prevent viewing or editing a tem
     screen.getByRole("heading", { name: "Version history" })
   ).toBeInTheDocument()
 })
+
+test("template and field totals use neutral count labels for a single result", async () => {
+  mocks.templates.mockResolvedValue({
+    ...listData(),
+    templates: [template],
+    count: 1,
+  })
+  const list = mount()
+  expect(await screen.findByText("Templates: 1")).toBeInTheDocument()
+  list.unmount()
+  mocks.template.mockResolvedValue({
+    ...detailData(),
+    revisions: [{ ...template, fields: [template.fields[0]] }],
+  })
+  mount(true)
+  expect(await screen.findByText("Version 2 · Fields: 1")).toBeInTheDocument()
+})

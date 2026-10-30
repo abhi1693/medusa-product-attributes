@@ -45,6 +45,8 @@ docker compose --profile tools run --rm --build --no-deps tooling npm run pack:l
 
 The package includes built server code, declarations, native Admin entries and an ESM/CJS client. Package checks verify declared export paths. The application image performs an ordinary root installation with lifecycle scripts, creates a consumer lock for the exact built archive, and runs a clean consumer `npm ci`. The compatibility host's dependencies stay in Docker.
 
+The host installer clears only this fixture's installed dependencies and generated lock before creating its new lock. This prevents npm's hidden installed-package lock from retaining an older integrity when an unreleased local archive is rebuilt at the same path/version. Published package versions remain immutable.
+
 ## Explicit CI mode
 
 Test services exist only in `compose.ci.yaml`. Ordinary startup, Watch and tooling do not start tests or test databases.

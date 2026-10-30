@@ -146,7 +146,7 @@ const ProductAttributesPage = () => {
       {query.data && (
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
           <Text size="small" className="text-ui-fg-subtle">
-            {query.data.count} templates
+            Templates: {query.data.count}
             {!query.data.can_write && " · Read-only access"}
           </Text>
           <div className="flex gap-2">

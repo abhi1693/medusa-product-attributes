@@ -41,10 +41,11 @@ export async function templateAssignments(
   const service =
     req.scope.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
   const template = await service.revision(req.params.id)
-  const [bindings, count] =
-    await service.listAndCountProductTemplateAssignments(
+  const [specifications, count] =
+    await service.listAndCountProductSpecifications(
       {
         template_id: template.id,
+        linked: true,
         ...(outdated ? { template_version: { $lt: template.version } } : {}),
       },
       {
@@ -54,23 +55,25 @@ export async function templateAssignments(
         select: ["id", "product_id", "template_version"],
       }
     )
-  const visible = [] as typeof bindings
-  for (const binding of bindings)
+  const visible = [] as typeof specifications
+  for (const specification of specifications)
     if (
       await allowed(req, {
         action: "values.read",
-        product_id: binding.product_id,
+        product_id: specification.product_id,
         template_id: template.id,
       })
     )
-      visible.push(binding)
+      visible.push(specification)
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
   const products = visible.length
     ? (
         await query.graph({
           entity: "product",
           fields: ["id", "title", "status"],
-          filters: { id: visible.map((binding) => binding.product_id) },
+          filters: {
+            id: visible.map((specification) => specification.product_id),
+          },
         })
       ).data
     : []
@@ -81,8 +84,8 @@ export async function templateAssignments(
     ])
   )
   const response: TemplateAssignmentsResponse = {
-    assignments: visible.flatMap((binding) => {
-      const product = byId.get(binding.product_id)
+    assignments: visible.flatMap((specification) => {
+      const product = byId.get(specification.product_id)
       return product
         ? [
             {
@@ -91,7 +94,7 @@ export async function templateAssignments(
                 title: product.title,
                 status: product.status,
               },
-              template_version: binding.template_version,
+              template_version: specification.template_version,
             },
           ]
         : []

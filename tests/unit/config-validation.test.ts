@@ -6,13 +6,7 @@ import {
   resolveOptions,
   templateSchema,
 } from "../../src/config"
-import {
-  isRecord,
-  mergeValues,
-  readEnvelope,
-  readVariantEnvelope,
-  validateValues,
-} from "../../src/validation"
+import { isRecord, mergeValues, validateValues } from "../../src/validation"
 import type { AttributeField, TemplateDefinition } from "../../src/types"
 
 export const field: AttributeField = {
@@ -126,73 +120,11 @@ describe("template contracts", () => {
   })
 })
 
-describe("safe native metadata contracts", () => {
-  const product = {
-    template_id: "pat_test",
-    template_version: 1,
-    version: 1,
-    values: {},
-  }
-  const variant = { version: 1, values: {} }
-  it("reads only own namespaces and required own properties", () => {
+describe("safe scope value merging", () => {
+  it("recognizes records and merges explicit clear without assigning prototypes", () => {
     for (const value of [null, [], undefined, 0])
       expect(isRecord(value)).toBe(false)
     expect(isRecord({})).toBe(true)
-    expect(readEnvelope({ product_attributes: product })).toEqual(product)
-    expect(
-      readVariantEnvelope({ specifications: variant }, "specifications")
-    ).toEqual(variant)
-    expect(readVariantEnvelope({ product_attributes: variant })).toEqual(
-      variant
-    )
-    for (const value of [
-      null,
-      [],
-      {},
-      Object.create({ product_attributes: product }),
-    ])
-      expect(readEnvelope(value)).toBeNull()
-    for (const value of [
-      null,
-      [],
-      {},
-      Object.create({ product_attributes: variant }),
-    ])
-      expect(readVariantEnvelope(value)).toBeNull()
-    expect(() =>
-      readEnvelope({ product_attributes: Object.create(product) })
-    ).toThrow()
-    expect(() =>
-      readVariantEnvelope({ product_attributes: Object.create(variant) })
-    ).toThrow()
-  })
-  it.each([
-    null,
-    [],
-    {},
-    { ...product, template_id: 1 },
-    { ...product, template_id: "" },
-    { ...product, template_version: 0 },
-    { ...product, template_version: 1.5 },
-    { ...product, version: 0 },
-    { ...product, version: "1" },
-    { ...product, values: [] },
-    { ...product, unexpected: 1 },
-  ])("rejects malformed product metadata %#", (value) =>
-    expect(() => readEnvelope({ product_attributes: value })).toThrow()
-  )
-  it.each([
-    null,
-    [],
-    {},
-    { ...variant, version: 0 },
-    { ...variant, version: "1" },
-    { ...variant, values: [] },
-    { ...variant, unexpected: 1 },
-  ])("rejects malformed variant metadata %#", (value) =>
-    expect(() => readVariantEnvelope({ product_attributes: value })).toThrow()
-  )
-  it("merges explicit clear operations without assigning to the object prototype", () => {
     const patch = JSON.parse(
       '{"model":null,"enabled":false,"__proto__":"safe"}'
     )

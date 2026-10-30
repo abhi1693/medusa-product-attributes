@@ -16,10 +16,13 @@ import {
   productState,
   productIssues,
   validateProduct,
-  variantEnvelope,
 } from "../workflows/read"
+import type { StoreProductAttributes } from "../types"
 import { isRecord } from "../validation"
-import { mutateProductAttributes } from "../workflows/write"
+import {
+  mutateProductAttributes,
+  exportProductAttributesMetadata,
+} from "../workflows/write"
 import { allowed, authorize } from "./authorization"
 
 const version = z.string().min(1).max(200)
@@ -62,6 +65,7 @@ const valuesSchema = z
   })
   .strict()
 const revisionSchema = z.object({ version: z.number().int().min(1) }).strict()
+const exportSchema = z.object({ version }).strict()
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input)
@@ -173,10 +177,15 @@ export async function assignProduct(
 ) {
   await authorize(req, { action: "values.write", product_id: req.params.id })
   res.json(
-    await mutateProductAttributes(req.scope, {
-      product_id: req.params.id,
-      assignment: parse(assignmentSchema, req.body),
-    })
+    await mutateProductAttributes(
+      req.scope,
+      {
+        product_id: req.params.id,
+        assignment: parse(assignmentSchema, req.body),
+      },
+      true,
+      req.auth_context.actor_id
+    )
   )
 }
 export async function saveProductValues(
@@ -185,10 +194,15 @@ export async function saveProductValues(
 ) {
   await authorize(req, { action: "values.write", product_id: req.params.id })
   res.json(
-    await mutateProductAttributes(req.scope, {
-      product_id: req.params.id,
-      values: parse(valuesSchema, req.body),
-    })
+    await mutateProductAttributes(
+      req.scope,
+      {
+        product_id: req.params.id,
+        values: parse(valuesSchema, req.body),
+      },
+      true,
+      req.auth_context.actor_id
+    )
   )
 }
 export async function checkProduct(
@@ -199,6 +213,22 @@ export async function checkProduct(
   res.json({
     validation: await validateProduct(req.scope, req.params.id, true),
   })
+}
+
+export async function exportProductMetadata(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse
+) {
+  await authorize(req, { action: "values.read", product_id: req.params.id })
+  await authorize(req, { action: "values.write", product_id: req.params.id })
+  const input = parse(exportSchema, req.body)
+  res.json(
+    await exportProductAttributesMetadata(
+      req.scope,
+      req.params.id,
+      input.version
+    )
+  )
 }
 
 export async function storeProduct(
@@ -222,13 +252,21 @@ export async function storeProduct(
   if (!links.length) return missing()
   try {
     const state = await productState(req.scope, req.params.id)
-    if (state.product.status !== "published" || !state.template)
-      return missing()
     if (
-      productIssues(state.template, state.product, state.namespace, true).length
+      state.product.status !== "published" ||
+      !state.template ||
+      !state.specification
     )
       return missing()
-    res.json({
+    const snapshot = {
+      values: state.specification.values,
+      variants: (state.product.variants || []).map((variant) => ({
+        id: variant.id,
+        values: state.specification!.variants[variant.id] || {},
+      })),
+    }
+    if (productIssues(state.template, snapshot, true).length) return missing()
+    const response: StoreProductAttributes = {
       product_id: state.product.id,
       template: {
         key: state.template.key,
@@ -236,13 +274,9 @@ export async function storeProduct(
         version: state.template.version,
         fields: state.template.fields,
       },
-      values: state.stored!.values,
-      variants: (state.product.variants || []).map((variant) => ({
-        id: variant.id,
-        values:
-          variantEnvelope(variant.metadata, state.namespace)?.values || {},
-      })),
-    })
+      ...snapshot,
+    }
+    res.json(response)
   } catch (error) {
     if (
       error instanceof MedusaError &&

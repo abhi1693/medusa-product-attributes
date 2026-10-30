@@ -1,58 +1,7 @@
-import type {
-  AttributeField,
-  AttributeValues,
-  MetadataEnvelope,
-  VariantMetadataEnvelope,
-  ValidationIssue,
-} from "./types"
+import type { AttributeField, AttributeValues, ValidationIssue } from "./types"
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
-export function readEnvelope(
-  metadata: unknown,
-  namespace = "product_attributes"
-): MetadataEnvelope | null {
-  if (!isRecord(metadata) || !Object.hasOwn(metadata, namespace)) return null
-  const value = metadata[namespace]
-  if (
-    !isRecord(value) ||
-    ["template_id", "template_version", "version", "values"].some(
-      (key) => !Object.hasOwn(value, key)
-    ) ||
-    typeof value.template_id !== "string" ||
-    !value.template_id ||
-    !Number.isSafeInteger(value.template_version) ||
-    Number(value.template_version) < 1 ||
-    !Number.isSafeInteger(value.version) ||
-    Number(value.version) < 1 ||
-    !isRecord(value.values) ||
-    Object.keys(value).some(
-      (key) =>
-        !["template_id", "template_version", "version", "values"].includes(key)
-    )
-  )
-    throw new Error("Invalid product attributes metadata envelope")
-  return value as MetadataEnvelope
-}
-
-export function readVariantEnvelope(
-  metadata: unknown,
-  namespace = "product_attributes"
-): VariantMetadataEnvelope | null {
-  if (!isRecord(metadata) || !Object.hasOwn(metadata, namespace)) return null
-  const value = metadata[namespace]
-  if (
-    !isRecord(value) ||
-    ["version", "values"].some((key) => !Object.hasOwn(value, key)) ||
-    !Number.isSafeInteger(value.version) ||
-    Number(value.version) < 1 ||
-    !isRecord(value.values) ||
-    Object.keys(value).some((key) => !["version", "values"].includes(key))
-  )
-    throw new Error("Invalid variant attributes metadata envelope")
-  return value as VariantMetadataEnvelope
 }
 
 export function mergeValues(

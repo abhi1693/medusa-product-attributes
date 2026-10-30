@@ -61,7 +61,7 @@ test("impact lists native products with assigned/current versions and supports p
   expect(within(region).getByText("draft")).toBeInTheDocument()
   expect(within(region).getAllByText("Update available")).toHaveLength(1)
   expect(within(region).getByText("Version 1")).toBeInTheDocument()
-  expect(within(region).getByText("41 assignments")).toBeInTheDocument()
+  expect(within(region).getByText("Assignments: 41")).toBeInTheDocument()
   expect(
     within(region).getByRole("button", { name: "Previous" })
   ).toBeDisabled()
@@ -119,7 +119,7 @@ test("impact loading and product access denial recover within their own card", a
 
 test("impact failures retain a local retry and hide potentially stale totals", async () => {
   const { client } = mount()
-  expect(await screen.findByText("41 assignments")).toBeInTheDocument()
+  expect(await screen.findByText("Assignments: 41")).toBeInTheDocument()
   api.templateProducts.mockRejectedValueOnce(new Error("Network unavailable"))
   await act(async () => {
     await client.invalidateQueries({
@@ -129,9 +129,9 @@ test("impact failures retain a local retry and hide potentially stale totals", a
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Network unavailable"
   )
-  expect(screen.queryByText("41 assignments")).not.toBeInTheDocument()
+  expect(screen.queryByText("Assignments: 41")).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "Try again" }))
-  expect(await screen.findByText("41 assignments")).toBeInTheDocument()
+  expect(await screen.findByText("Assignments: 41")).toBeInTheDocument()
 })
 
 test("empty and current-version-only results distinguish assignment state", async () => {
@@ -158,7 +158,7 @@ test("pages omitting deleted or inaccessible products keep assignment counts and
   expect(
     await screen.findByText("No accessible products on this page")
   ).toBeInTheDocument()
-  expect(screen.getByText("41 assignments")).toBeInTheDocument()
+  expect(screen.getByText("Assignments: 41")).toBeInTheDocument()
   expect(screen.getByText(/Totals may include products/)).toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "Next" }))
   await waitFor(() =>
@@ -168,4 +168,15 @@ test("pages omitting deleted or inaccessible products keep assignment counts and
       outdated: false,
     })
   )
+})
+
+test("a single assignment uses the same neutral total label", async () => {
+  api.templateProducts.mockResolvedValue({
+    ...response,
+    assignments: response.assignments.slice(0, 1),
+    count: 1,
+  })
+  mount()
+  expect(await screen.findByText("Assignments: 1")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
 })

@@ -59,7 +59,7 @@ describe("native lifecycle extension", () => {
     await validateNativeVariants({ product_variants: [{ id: "orphan" }] }, h)
     expect(h.products.retrieveProduct).toHaveBeenCalledTimes(2)
     h.product.status = "published"
-    h.product.metadata.product_attributes.values = {}
+    h.specification!.values = {}
     await expect(
       validateNativeProducts({ products: [{ id: h.product.id }] }, h)
     ).rejects.toThrow("required")

@@ -216,7 +216,7 @@ const TemplateDetailPage = () => {
               className="flex flex-wrap items-center justify-between gap-2 px-6 py-3"
             >
               <Text size="small">
-                Version {revision.version} · {revision.fields.length} fields
+                Version {revision.version} · Fields: {revision.fields.length}
               </Text>
               {revision.version === template.version && (
                 <Badge size="xsmall" color="blue">

@@ -32,6 +32,8 @@ export type TemplateSummary = {
   version: number
   source: "configuration" | "admin"
   archived: boolean
+  category_ids?: string[]
+  recommended?: boolean
 }
 export type TemplateRevision = TemplateSummary & {
   description: string
@@ -89,22 +91,31 @@ export type TemplateAssignmentInput = {
   template_id: string
   template_version: number
 }
-export type MetadataEnvelope = {
-  template_id: string
-  template_version: number
-  version: number
-  values: AttributeValues
-}
-export type VariantMetadataEnvelope = {
-  version: number
-  values: AttributeValues
-}
-export type ProductTemplateBinding = {
+export type OwnedSpecification = {
+  linked: boolean
   id: string
   product_id: string
   template_id: string
   template_version: number
   version: number
+  revision_id: string
+  values: AttributeValues
+  variants: Record<string, AttributeValues>
+}
+export type SpecificationWriteInput = {
+  product_id: string
+  template_id: string
+  template_version: number
+  expected_version: number
+  complete: boolean
+  values: AttributeValues
+  variants: Record<string, AttributeValues>
+  actor_id: string
+}
+export type SpecificationWriteReceipt = {
+  before: OwnedSpecification | null
+  after: OwnedSpecification
+  created_variants: Array<{ id: string; variant_id: string }>
 }
 export type AttributeAction =
   "templates.read" | "templates.write" | "values.read" | "values.write"

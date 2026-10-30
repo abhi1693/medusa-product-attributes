@@ -257,11 +257,15 @@ test("stale template revisions retain edits and reload only after confirmation, 
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Reload unavailable"
   )
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Reload latest" })).toHaveFocus()
+  )
   expect(screen.getByLabelText("Name")).toHaveValue("Unsaved schema")
   await user.click(screen.getByRole("button", { name: "Reload latest" }))
   await waitFor(() =>
     expect(screen.getByLabelText("Name")).toHaveValue("Newer switch")
   )
+  await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus())
   expect(screen.getByRole("heading", { name: "Version 4" })).toBeInTheDocument()
   expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: "Create version" })).toBeEnabled()

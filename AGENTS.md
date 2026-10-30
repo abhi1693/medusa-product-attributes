@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Build a reusable Medusa v2 plugin for typed product attributes and specification templates. Keep brands, merchant taxonomies, roles and catalog policy in the consuming application. Use stable attribute keys and normalized values. Native Product/Variant metadata owns specification values; the plugin owns template definitions and revisions. Do not duplicate products, variants, inventory, prices or authentication. No legacy adapters or migration scripts for an earlier implementation.
+Build a reusable Medusa v2 plugin for typed product attributes and specification templates. Keep brands, merchant taxonomies, roles and catalog policy in the consuming application. Use stable attribute keys and normalized values. The plugin owns templates, immutable specification revisions and their atomic current pointers; link them to native Products/Variants using public module links. Native metadata is at most an optional one-way export, never the value source of truth. Do not duplicate commerce records, inventory, prices or authentication. No legacy adapters or migration scripts for an earlier implementation.
 
 ## Research before implementation
 
@@ -15,6 +15,12 @@ Before implementing or changing behavior:
 5. Choose supported public APIs and record the version/date, URLs, native symbols, limitations and intended validation in `docs/research.md`. If a hook is absent, investigate supported composition or a custom endpoint. Never invent an API or patch a dependency to match an assumption.
 
 Use owning module services and public workflows for native writes. Cross-module coordination belongs in workflows; module isolation prohibits resolving Product from the template module. SQL, if needed, only touches this module's own tables. Metadata merging, batch/import paths, publication checks and compensation require deliberate verification.
+
+The storage decision in `docs/storage-decision.md` is accepted. A real native Product compensation can restore an old full metadata snapshot after a separate successful edit. Do not reintroduce authoritative metadata, temporary binding-version mismatches or guessed global locks to hide that race. Persist specification values and pointers atomically within this module, validate current native variant membership, and gate Store reads on a complete current immutable revision plus native publication/channel eligibility. Do not infer a last-published fallback, editorial approval or global serializability of native workflows. Test a failed native parent workflow compensating after a successful specification write: specification data must survive. Test public link creation failure, delete/restore and retry as well.
+
+Build HTTP fixtures from the pinned native HTTP validators, not only internal workflow DTOs. For example, native product-create API variants require a `prices` array even when an internal workflow permits it to be omitted. Browser failures on a native page must be inspected directly: a denied native field query can prevent widget rendering before the widget runs. Do not change supported widget placement to work around an authorization failure.
+
+Match `MedusaService` model object keys to the DML entity's PascalCase name. Native joiner method suffixes and cascade resolution follow those entity names; shortened aliases can compile and pass mocks while missing real delete/restore cascades. Check module-link entrypoint names against model names as well. Verify public Query traversal and native deletion/compensation in a real consuming application. For multi-link creation failures, retain the compensation input even when only some links were created; use documented workflow compensation and public `Link.dismiss`, preserving native soft-deleted history.
 
 ## Admin experience
 

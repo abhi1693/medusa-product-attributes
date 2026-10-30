@@ -41,6 +41,7 @@ test("public client preserves supplied transport and encodes entity identifiers"
   await client.storeProduct("product/type")
   await client.assignTemplate("product/type", assignment)
   await client.saveValues("product/type", values)
+  await client.exportMetadata("product/type", "specification_revision_2")
   await client.validate("product/type")
   expect(fetch.mock.calls).toEqual([
     ["/admin/product-attributes/templates", { query: {} }],
@@ -75,6 +76,10 @@ test("public client preserves supplied transport and encodes entity identifiers"
     [
       "/admin/product-attributes/products/product%2Ftype/values",
       { method: "POST", body: values },
+    ],
+    [
+      "/admin/product-attributes/products/product%2Ftype/export",
+      { method: "POST", body: { version: "specification_revision_2" } },
     ],
     [
       "/admin/product-attributes/products/product%2Ftype/validate",
