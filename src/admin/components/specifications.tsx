@@ -465,7 +465,7 @@ export const Specifications = ({
               {view.templates.length === 0 && (
                 <Text size="small" className="text-ui-fg-subtle">
                   No active groups are available. Create one in Settings →
-                  Product attributes.
+                  Specification groups.
                 </Text>
               )}
             </div>

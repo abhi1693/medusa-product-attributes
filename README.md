@@ -36,6 +36,8 @@ Each product can have several groups, such as Connectivity, Power and Software. 
 
 Native product/variant fields remain authoritative for physical and customs attributes. The application must declare its measurement-unit convention and map only verified facts; device and packed shipping measurements are different.
 
+![Native Admin editor with reusable Connectivity, Power and Software groups](docs/assets/multiple-groups-editor.png)
+
 ## Development
 
 Requires Docker Compose. Node, npm, Medusa and browser tools run inside containers. The validated dependency baseline is Medusa **2.22.2**, UI **4.2.9**, Vite **7.3.7**, Node **24** and npm **11.19.0**.

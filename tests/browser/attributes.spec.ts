@@ -775,3 +775,141 @@ test("template impact lists products pinned to earlier schema versions", async (
     fullPage: true,
   })
 })
+
+test("several reusable groups edit and reload on native products with clear optional values", async ({
+  page,
+  request,
+}) => {
+  const headers = await tokenFor(request)
+  const post = async (path: string, data: Record<string, unknown>) => {
+    const response = await request.post(path, { headers, data })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    return response.json()
+  }
+  const number = (
+    key: string,
+    label: string,
+    unit?: string
+  ): AttributeField => ({
+    key,
+    label,
+    type: "number",
+    scope: "product",
+    required: false,
+    searchable: false,
+    filterable: false,
+    comparable: true,
+    ...(unit ? { unit } : {}),
+  })
+  const { template: power } = await post(root + "/templates", {
+    key: "shared_power",
+    name: "Power",
+    fields: [number("max_power_w", "Maximum power", "W")],
+  })
+  const { template: connectivity } = await post(root + "/templates", {
+    key: "shared_connectivity",
+    name: "Connectivity",
+    fields: [number("port_count", "Port count")],
+  })
+  const { template: software } = await post(root + "/templates", {
+    key: "shared_software",
+    name: "Software",
+    fields: [{ ...number("managed", "Managed"), type: "boolean" }],
+  })
+  const products = []
+  for (const handle of ["grouped-device-one", "grouped-device-two"]) {
+    const { product } = await post("/admin/products", {
+      title: handle,
+      handle,
+      status: "draft",
+      weight: 338,
+      options: [{ title: "Configuration", values: ["Default"] }],
+      variants: [
+        {
+          title: "Default",
+          sku: handle,
+          options: { Configuration: "Default" },
+          prices: [],
+        },
+      ],
+    })
+    products.push(product)
+    const state = await (
+      await request.get(root + "/products/" + product.id, { headers })
+    ).json()
+    const assigned = await post(root + "/products/" + product.id + "/groups", {
+      version: state.version,
+      groups: [connectivity, power, software].map((group) => ({
+        template_id: group.id,
+        template_version: group.version,
+      })),
+    })
+    expect(assigned.groups.map((group: { id: string }) => group.id)).toEqual([
+      connectivity.id,
+      power.id,
+      software.id,
+    ])
+  }
+  const duplicateState = await (
+    await request.get(root + "/products/" + products[0].id, { headers })
+  ).json()
+  const duplicate = await request.post(
+    root + "/products/" + products[0].id + "/groups",
+    {
+      headers,
+      data: {
+        version: duplicateState.version,
+        groups: [power, power].map((group) => ({
+          template_id: group.id,
+          template_version: group.version,
+        })),
+      },
+    }
+  )
+  expect(duplicate.status()).toBe(400)
+  await login(page)
+  await page.goto("/app/products/" + products[0].id)
+  const region = page.getByRole("region", {
+    name: "Specifications",
+    exact: true,
+  })
+  await expect(
+    region.getByRole("heading", { name: "Power", exact: true })
+  ).toBeVisible()
+  await expect(
+    region.getByRole("heading", { name: "Software", exact: true })
+  ).toBeVisible()
+  await region.getByRole("button", { name: "Edit", exact: true }).click()
+  const editor = page.getByRole("dialog")
+  await editor.getByLabel("Maximum power", { exact: true }).fill("9")
+  await editor.getByLabel("Port count", { exact: true }).fill("0")
+  await editor.getByLabel("Managed", { exact: true }).click()
+  await page.getByRole("option", { name: "No", exact: true }).click()
+  await page.screenshot({
+    path: "test-results/multiple-groups-editor.png",
+    fullPage: true,
+  })
+  await editor.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(editor).toHaveCount(0)
+  await page.reload()
+  await expect(region.getByText("9 W", { exact: true })).toBeVisible()
+  await expect(region.getByText("No", { exact: true })).toBeVisible()
+  await region.getByRole("button", { name: "Edit", exact: true }).click()
+  await page
+    .getByRole("dialog")
+    .getByLabel("Maximum power", { exact: true })
+    .fill("")
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save", exact: true })
+    .click()
+  await page.reload()
+  await expect(region.getByText("Not set", { exact: true })).toHaveCount(1)
+  const other = await (
+    await request.get(root + "/products/" + products[1].id, { headers })
+  ).json()
+  expect(other.values).toEqual({})
+  expect(other.groups.map((group: { id: string }) => group.id)).toContain(
+    power.id
+  )
+})
