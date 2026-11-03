@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -43,13 +44,14 @@ const view: ProductAttributes = {
   assignment_version: 1,
   version: "product_v1",
   can_write: true,
+  can_assign: true,
   groups: [
     {
       id: "template",
       key: "switch",
       name: "Switch",
       version: 1,
-      source: "admin",
+
       archived: false,
       category_ids: [],
       description: "",
@@ -94,7 +96,7 @@ const view: ProductAttributes = {
       key: "switch",
       name: "Switch",
       version: 2,
-      source: "admin",
+
       archived: false,
     },
   ],
@@ -678,7 +680,7 @@ test("loading template definitions can fail and recover without losing current p
     screen.getByRole("button", { name: "Manage attribute templates" })
   )
   await screen.findByRole("combobox", { name: "Applicable fields · Switch" })
-  expect(mocks.template).toHaveBeenCalledTimes(2)
+  expect(mocks.template).toHaveBeenCalledTimes(3)
 })
 
 test("one-level subsections display and edit independently typed leaf fields", async () => {
@@ -728,4 +730,163 @@ test("one-level subsections display and edit independently typed leaf fields", a
       values: { cameras_hd: 12, cameras_4k: 8 },
     })
   )
+})
+
+test("an open value draft retains its schema and CAS token across background refreshes", async () => {
+  const user = userEvent.setup()
+  const { client } = mount()
+  await user.click(await screen.findByRole("button", { name: "Edit" }))
+  fireEvent.change(screen.getByLabelText("Ports"), { target: { value: "12" } })
+  act(() => {
+    client.setQueryData(["attributes", "products", "product"], {
+      ...view,
+      version: "other_revision",
+      groups: [
+        {
+          ...view.groups[0],
+          fields: [{ ...view.groups[0].fields[0], label: "Changed schema" }],
+        },
+      ],
+    })
+  })
+  expect(screen.getByLabelText("Ports")).toHaveValue(12)
+  expect(screen.queryByLabelText("Changed schema")).not.toBeInTheDocument()
+  mocks.saveValues.mockRejectedValueOnce({ status: 409 })
+  await user.click(screen.getByRole("button", { name: "Save" }))
+  await screen.findByRole("alert")
+  expect(mocks.saveValues).toHaveBeenCalledWith("product", {
+    version: view.version,
+    values: { ports: 12 },
+  })
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
+})
+
+test("assignment drafts retain their base revision, adopt latest definitions explicitly and reset on reopen", async () => {
+  const user = userEvent.setup()
+  const { client } = mount()
+  await user.click(
+    await screen.findByRole("button", { name: "Manage attribute templates" })
+  )
+  await screen.findByRole("combobox", { name: "Applicable fields · Switch" })
+  const other = { ...view.groups[0], id: "other", name: "Other" }
+  act(() => {
+    client.setQueryData(["attributes", "products", "product"], {
+      ...view,
+      version: "other_revision",
+      groups: [view.groups[0], other],
+    })
+  })
+  await user.click(screen.getByRole("button", { name: "Use latest version" }))
+  expect(await screen.findByText("Version 2")).toBeInTheDocument()
+  mocks.assignGroups.mockRejectedValueOnce({ status: 409 })
+  await user.click(screen.getByRole("button", { name: "Save templates" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Your edits are preserved"
+  )
+  expect(mocks.assignGroups).toHaveBeenCalledWith("product", {
+    version: view.version,
+    groups: [
+      {
+        template_id: "template",
+        template_version: 2,
+        field_keys: ["ports", "colour"],
+      },
+    ],
+  })
+  expect(screen.getByRole("button", { name: "Save templates" })).toBeDisabled()
+  mocks.prompt.mockResolvedValueOnce(false)
+  await user.click(screen.getByRole("button", { name: "Reload" }))
+  expect(screen.getByText("Version 2")).toBeInTheDocument()
+  mocks.product.mockRejectedValueOnce(new Error("Reload unavailable"))
+  await user.click(screen.getByRole("button", { name: "Reload" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Reload unavailable"
+  )
+  await user.click(screen.getByRole("button", { name: "Reload" }))
+  await waitFor(() =>
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  )
+  await user.click(
+    screen.getByRole("button", { name: "Manage attribute templates" })
+  )
+  expect(await screen.findByText("Version 1")).toBeInTheDocument()
+  mocks.template.mockRejectedValueOnce(new Error("Upgrade unavailable"))
+  await user.click(screen.getByRole("button", { name: "Use latest version" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Upgrade unavailable"
+  )
+  await user.click(screen.getByRole("button", { name: "Reload" }))
+  await waitFor(() =>
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  )
+  act(() => {
+    client.setQueryData(["attributes", "products", "product"], {
+      ...view,
+      can_assign: false,
+    })
+  })
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Manage attribute templates" })
+    ).not.toBeInTheDocument()
+  )
+})
+
+test("adding a template preserves the open selection and an upgrade retains only compatible keys", async () => {
+  const user = userEvent.setup()
+  mocks.product.mockResolvedValue({
+    ...view,
+    templates: [
+      ...view.templates,
+      {
+        ...view.templates[0],
+        id: "other",
+        key: "other",
+        name: "Other",
+        version: 1,
+      },
+    ],
+  })
+  mount()
+  await user.click(
+    await screen.findByRole("button", { name: "Manage attribute templates" })
+  )
+  await screen.findByRole("combobox", { name: "Applicable fields · Switch" })
+  await user.click(
+    screen.getByRole("combobox", { name: "Attribute templates" })
+  )
+  await user.click(screen.getByRole("option", { name: "Other · v1" }))
+  await user.keyboard("{Escape}")
+  await waitFor(() => expect(screen.getAllByText("Version 1")).toHaveLength(2))
+  expect(mocks.template).toHaveBeenCalledTimes(2)
+  mocks.template.mockResolvedValueOnce({
+    template: {
+      ...view.groups[0],
+      version: 2,
+      fields: [view.groups[0].fields[0]],
+    },
+  })
+  await user.click(screen.getByRole("button", { name: "Use latest version" }))
+  expect(await screen.findByText("Version 2")).toBeInTheDocument()
+  mocks.assignGroups.mockRejectedValueOnce(new Error("Temporary save failure"))
+  await user.click(screen.getByRole("button", { name: "Save templates" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Temporary save failure"
+  )
+  expect(screen.getByRole("button", { name: "Save templates" })).toBeEnabled()
+  await user.click(screen.getByRole("button", { name: "Save templates" }))
+  await waitFor(() =>
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+  )
+  expect(mocks.assignGroups).toHaveBeenLastCalledWith("product", {
+    version: view.version,
+    groups: [
+      { template_id: "template", template_version: 2, field_keys: ["ports"] },
+      {
+        template_id: "other",
+        template_version: 1,
+        field_keys: ["ports", "colour"],
+      },
+    ],
+  })
 })

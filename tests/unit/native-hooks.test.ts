@@ -22,7 +22,6 @@ import {
   validateNativeVariants,
 } from "../../src/workflows/native-validation"
 import loadNativeValidation from "../../src/modules/product-attributes/loaders/native-validation"
-import synchronize from "../../src/scripts/sync-templates"
 import moduleDefinition from "../../src/modules/product-attributes"
 import { PRODUCT_ATTRIBUTES } from "../../src/index"
 
@@ -63,15 +62,5 @@ describe("native lifecycle extension", () => {
     await expect(
       validateNativeProducts({ products: [{ id: h.product.id }] }, h)
     ).rejects.toThrow("required")
-  })
-  it("synchronizes only explicitly invoked configured template definitions", async () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => {})
-    const service = { synchronize: vi.fn().mockResolvedValue({ changed: 2 }) }
-    const container = { resolve: () => service }
-    await synchronize({ container } as never)
-    expect(service.synchronize).toHaveBeenCalledOnce()
-    expect(info).toHaveBeenCalledWith(
-      "Synchronized product specification templates: 2 changes"
-    )
   })
 })

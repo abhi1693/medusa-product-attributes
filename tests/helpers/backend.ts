@@ -6,7 +6,7 @@ export const template: TemplateRevision = {
   key: "network",
   name: "Network",
   version: 1,
-  source: "admin",
+
   archived: false,
   description: "",
   category_ids: [],

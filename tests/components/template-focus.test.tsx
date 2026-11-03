@@ -39,7 +39,7 @@ const largeTemplate: TemplateRevision = {
   description: "",
   category_ids: [],
   version: 1,
-  source: "admin",
+
   archived: false,
   fields: Array.from({ length: 30 }, (_, index) => ({
     ...emptyField(),

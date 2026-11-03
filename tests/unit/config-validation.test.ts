@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   defineTemplate,
+  defineTemplates,
   fieldSchema,
   resolveModuleOptions,
   resolveOptions,
@@ -94,13 +95,11 @@ describe("template contracts", () => {
     expect(resolveModuleOptions()).toEqual(resolveOptions())
     expect(resolveOptions()).toEqual({
       metadata_key: "product_attributes",
-      templates: [],
       register_native_hooks: true,
     })
     const authorize = () => true
     expect(
       resolveOptions({
-        templates: [definition],
         metadata_key: "specifications",
         authorize,
         register_native_hooks: false,
@@ -119,9 +118,11 @@ describe("template contracts", () => {
       { templates: Array(1001).fill(definition) },
     ])
       expect(() => resolveOptions(value as never)).toThrow()
-    expect(() =>
-      resolveOptions({ templates: [definition, definition] })
-    ).toThrow("Configured template keys must be unique")
+    expect(() => defineTemplates([definition, definition])).toThrow(
+      "Template keys must be unique"
+    )
+    expect(defineTemplates([definition])).toHaveLength(1)
+    expect(() => defineTemplates(Array(1001).fill(definition))).toThrow()
   })
 })
 
@@ -251,7 +252,7 @@ it("selects only explicitly applicable fields and rejects invalid selections", (
     ...definition,
     id: "template",
     version: 1,
-    source: "admin" as const,
+
     archived: false,
     description: "",
     category_ids: [],

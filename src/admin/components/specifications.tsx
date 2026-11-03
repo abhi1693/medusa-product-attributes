@@ -23,7 +23,7 @@ import { AttributeInput, formatAttributeValue } from "./attribute-input"
 import { errorMessage, Feedback } from "./feedback"
 
 const ValuesEditor = ({
-  view,
+  view: currentView,
   variantId,
   onClose,
   onSaved,
@@ -33,6 +33,7 @@ const ValuesEditor = ({
   onClose: () => void
   onSaved: (view: ProductAttributes) => void
 }) => {
+  const [view] = useState(currentView)
   const variant = view.variants.find((item) => item.id === variantId)
   const [opener] = useState(() => document.activeElement)
   const reloadButton = useRef<HTMLButtonElement>(null)
@@ -170,7 +171,7 @@ const ValuesEditor = ({
               </Text>
             )}
             <fieldset
-              disabled={pending || !view.can_write}
+              disabled={pending || !currentView.can_write}
               className="flex flex-col gap-5"
             >
               {view.groups.map((group) => (
@@ -232,7 +233,7 @@ const ValuesEditor = ({
                 size="small"
                 type="submit"
                 isLoading={pending}
-                disabled={stale || !view.can_write}
+                disabled={stale || !currentView.can_write}
               >
                 Save
               </Button>
@@ -256,6 +257,8 @@ export const Specifications = ({
   const [editing, setEditing] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [selectedGroups, setSelectedGroups] = useState<string[]>([])
+  const [assignmentVersion, setAssignmentVersion] = useState("")
+  const [staleAssignment, setStaleAssignment] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const [assignmentDefinitions, setAssignmentDefinitions] = useState<
@@ -328,11 +331,11 @@ export const Specifications = ({
     try {
       saved(
         await attributesApi.assignGroups(productId, {
-          version: view.version,
+          version: assignmentVersion,
           groups: selectedGroups.map((id) => {
-            const existing = view.groups.find((group) => group.id === id)
-            const group =
-              existing || view.templates.find((group) => group.id === id)!
+            const group = assignmentDefinitions.find(
+              (group) => group.id === id
+            )!
             return {
               template_id: group.id,
               template_version: group.version,
@@ -345,17 +348,23 @@ export const Specifications = ({
       toast.success("Attribute templates saved")
     } catch (failure) {
       setError(errorMessage(failure))
+      setStaleAssignment((failure as { status?: number }).status === 409)
     } finally {
       setPending(false)
     }
   }
-  const chooseGroups = async (ids: string[]) => {
+  const chooseGroups = async (ids: string[], initial = false) => {
+    if (initial) {
+      setAssignmentVersion(view.version)
+      setStaleAssignment(false)
+    }
     setPending(true)
     setError(undefined)
     try {
       const definitions = await Promise.all(
         ids.map(async (id) => {
-          const cached = assignmentDefinitions.find((item) => item.id === id)
+          const cached =
+            !initial && assignmentDefinitions.find((item) => item.id === id)
           if (cached) return cached
           const assigned = view.groups.find((item) => item.id === id)
           const response = await attributesApi.template(id)
@@ -371,7 +380,7 @@ export const Specifications = ({
         Object.fromEntries(
           definitions.map((template) => [
             template.id,
-            current[template.id] ||
+            (!initial && current[template.id]) ||
               view.groups.find((group) => group.id === template.id)
                 ?.field_keys ||
               template.fields.map((field) => field.key),
@@ -380,6 +389,50 @@ export const Specifications = ({
       )
       setSelectedGroups(ids)
       setSelecting(true)
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setPending(false)
+    }
+  }
+  const upgradeGroup = async (id: string) => {
+    setPending(true)
+    setError(undefined)
+    try {
+      const { template } = await attributesApi.template(id)
+      setAssignmentDefinitions((current) =>
+        current.map((item) => (item.id === id ? template : item))
+      )
+      setSelectedFields((current) => ({
+        ...current,
+        [id]: current[id].filter((key) =>
+          template.fields.some((field) => field.key === key)
+        ),
+      }))
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setPending(false)
+    }
+  }
+  const reloadAssignments = async () => {
+    if (
+      selecting &&
+      !(await prompt({
+        title: "Reload attributes?",
+        description:
+          "Discard unsaved template and field selections and load the latest product.",
+        confirmText: "Reload",
+        cancelText: "Keep editing",
+      }))
+    )
+      return
+    setPending(true)
+    try {
+      saved(await attributesApi.product(productId))
+      setSelecting(false)
+      setStaleAssignment(false)
+      setError(undefined)
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {
@@ -419,7 +472,7 @@ export const Specifications = ({
             variant="transparent"
             size="small"
             onClick={() => {
-              void query.refetch()
+              void reloadAssignments()
             }}
           >
             Reload
@@ -493,7 +546,7 @@ export const Specifications = ({
           You have read-only access.
         </Text>
       )}
-      {!variantId && view.can_write && (
+      {!variantId && view.can_write && view.can_assign && (
         <fieldset disabled={pending} className="flex flex-col gap-3 px-6 py-4">
           <Button
             size="small"
@@ -501,7 +554,11 @@ export const Specifications = ({
             className="w-fit"
             onClick={() => {
               if (selecting) setSelecting(false)
-              else void chooseGroups(view.groups.map((group) => group.id))
+              else
+                void chooseGroups(
+                  view.groups.map((group) => group.id),
+                  true
+                )
             }}
           >
             Manage attribute templates
@@ -534,7 +591,7 @@ export const Specifications = ({
               {assignmentDefinitions
                 .filter((template) => selectedGroups.includes(template.id))
                 .map((template) => (
-                  <label
+                  <div
                     key={template.id}
                     className="flex flex-col gap-2 text-sm"
                   >
@@ -553,13 +610,33 @@ export const Specifications = ({
                         }))
                       }
                     />
-                  </label>
+                    <div className="flex items-center gap-2 text-xs text-ui-fg-subtle">
+                      Version {template.version}
+                      {view.templates.some(
+                        (latest) =>
+                          latest.id === template.id &&
+                          latest.version > template.version
+                      ) && (
+                        <Button
+                          type="button"
+                          size="small"
+                          variant="secondary"
+                          onClick={() => {
+                            void upgradeGroup(template.id)
+                          }}
+                        >
+                          Use latest version
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               <Button
                 size="small"
                 className="w-fit"
                 disabled={
                   pending ||
+                  staleAssignment ||
                   selectedGroups.some((id) => !selectedFields[id].length)
                 }
                 isLoading={pending}

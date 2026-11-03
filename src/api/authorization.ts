@@ -16,7 +16,7 @@ export async function allowed(
   const service =
     request.scope.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
   return service.configuration.authorize
-    ? service.configuration.authorize(request, context)
+    ? (await service.configuration.authorize(request, context)) === true
     : true
 }
 

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto"
-import { isDeepStrictEqual } from "node:util"
 import type { Context } from "@medusajs/framework/types"
 import type { EntityManager } from "@medusajs/framework/mikro-orm/knex"
 import {
@@ -12,7 +11,7 @@ import {
 import {
   defineTemplate,
   resolveModuleOptions,
-  resolveOptions,
+  defineTemplates,
 } from "../../config"
 import type {
   ProductAttributesOptions,
@@ -90,13 +89,18 @@ export default class ProductAttributesService extends MedusaService({
         input.groups.length
     )
       invalid("Choose each specification group only once (maximum 30)")
-    const groups = await Promise.all(
-      input.groups.map((group) =>
-        this.revision(group.template_id, group.template_version, context).then(
-          (template) => applicableTemplate(template, group)
+    const groups: TemplateRevision[] = []
+    for (const assignment of input.groups)
+      groups.push(
+        applicableTemplate(
+          await this.revision(
+            assignment.template_id,
+            assignment.template_version,
+            context
+          ),
+          assignment
         )
       )
-    )
     for (const group of groups)
       if (
         group.archived &&
@@ -311,7 +315,7 @@ export default class ProductAttributesService extends MedusaService({
     const where = `deleted_at is null${query.include_archived ? "" : " and archived = false"}${query.q ? " and (name ilike ? or key ilike ?)" : ""}`
     const params = query.q ? [`%${query.q}%`, `%${query.q}%`] : []
     const templates = await manager.execute<TemplateSummary[]>(
-      `select id,key,name,version,source,archived,(select definition->'category_ids' from product_attribute_revision r where r.template_id=product_attribute_template.id and r.version=product_attribute_template.version) as category_ids from product_attribute_template where ${where} order by name,id offset ? limit ?`,
+      `select id,key,name,version,archived,(select definition->'category_ids' from product_attribute_revision r where r.template_id=product_attribute_template.id and r.version=product_attribute_template.version) as category_ids from product_attribute_template where ${where} order by name,id offset ? limit ?`,
       [...params, offset, limit]
     )
     const [count] = await manager.execute<Array<{ count: string }>>(
@@ -331,7 +335,7 @@ export default class ProductAttributesService extends MedusaService({
     const [record] = await manager.execute<
       Array<TemplateSummary & { definition: TemplateDefinition }>
     >(
-      "select t.id,t.key,t.source,t.archived,r.version,r.definition from product_attribute_template t join product_attribute_revision r on r.template_id=t.id and r.version=coalesce(?,t.version) where t.id=? and (t.deleted_at is null or ? is not null)",
+      "select t.id,t.key,t.archived,r.version,r.definition from product_attribute_template t join product_attribute_revision r on r.template_id=t.id and r.version=coalesce(?,t.version) where t.id=? and (t.deleted_at is null or ? is not null)",
       [version ?? null, id, version ?? null]
     )
     if (!record)
@@ -344,7 +348,6 @@ export default class ProductAttributesService extends MedusaService({
       key: record.key,
       name: record.definition.name,
       version: record.version,
-      source: record.source,
       archived: record.archived,
       description: record.definition.description || "",
       category_ids: record.definition.category_ids || [],
@@ -379,8 +382,6 @@ export default class ProductAttributesService extends MedusaService({
     const targetId = id || `pat_${randomUUID()}`
     if (id) {
       const previous = await this.revision(id, undefined, context)
-      if (previous.source !== "admin")
-        invalid("Configured templates are managed in application configuration")
       if (previous.version !== version) conflict()
       if (previous.key !== value.key) invalid("A template key cannot change")
       if (previous.archived) invalid("Archived templates cannot be revised")
@@ -396,7 +397,7 @@ export default class ProductAttributesService extends MedusaService({
       )
       if (existing.length) invalid("A template with this key already exists")
       await manager.execute(
-        "insert into product_attribute_template(id,key,name,version,source,archived) values(?,?,?,1,'admin',false)",
+        "insert into product_attribute_template(id,key,name,version,archived) values(?,?,?,1,false)",
         [targetId, value.key, value.name]
       )
     }
@@ -416,8 +417,6 @@ export default class ProductAttributesService extends MedusaService({
     const manager = context!.transactionManager!
     await manager.execute("select pg_advisory_xact_lock(903241011)")
     const template = await this.revision(id, undefined, context)
-    if (template.source !== "admin")
-      invalid("Configured templates are managed in application configuration")
     if (template.version !== version) conflict()
     await manager.execute(
       "update product_attribute_template set archived=true,updated_at=now() where id=?",
@@ -436,8 +435,6 @@ export default class ProductAttributesService extends MedusaService({
     const manager = context!.transactionManager!
     await manager.execute("select pg_advisory_xact_lock(903241011)")
     const template = await this.revision(id, undefined, context)
-    if (template.source !== "admin")
-      invalid("Configured templates are managed in application configuration")
     if (template.version !== version) conflict()
     const assigned = await manager.execute<Array<{ id: string }>>(
       "select s.id from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.deleted_at is null and exists (select 1 from jsonb_array_elements(r.groups) g where g->>'template_id'=?) limit 1",
@@ -454,11 +451,6 @@ export default class ProductAttributesService extends MedusaService({
     return { id, deleted: true as const }
   }
 
-  @InjectTransactionManager()
-  async synchronize(@MedusaContext() context?: Context<EntityManager>) {
-    return this.synchronizeDefinitions(this.configuration.templates, context)
-  }
-
   /** Seed editable definitions once. Existing edits, archives and deletion tombstones win. */
   @InjectTransactionManager()
   async seedDefinitions(
@@ -466,7 +458,7 @@ export default class ProductAttributesService extends MedusaService({
     actorId = "system:seed",
     @MedusaContext() context?: Context<EntityManager>
   ) {
-    const validated = resolveOptions({ templates: [...definitions] }).templates
+    const validated = defineTemplates(definitions)
     const manager = context!.transactionManager!
     await manager.execute("select pg_advisory_xact_lock(903241011)")
     let created = 0
@@ -480,71 +472,5 @@ export default class ProductAttributesService extends MedusaService({
       created++
     }
     return { created, skipped: validated.length - created }
-  }
-
-  @InjectTransactionManager()
-  async synchronizeDefinitions(
-    definitions: readonly TemplateDefinition[],
-    @MedusaContext() context?: Context<EntityManager>
-  ) {
-    const configured = resolveOptions({ templates: [...definitions] }).templates
-    const manager = context!.transactionManager!
-    await manager.execute("select pg_advisory_xact_lock(903241011)")
-    let changed = 0
-    for (const definition of configured) {
-      const [existing] = await manager.execute<TemplateSummary[]>(
-        "select id,key,name,version,source,archived from product_attribute_template where key=?",
-        [definition.key]
-      )
-      if (existing && existing.source !== "configuration")
-        invalid(
-          `Configured template key ${definition.key} belongs to an Admin-managed template`
-        )
-      const before = existing
-        ? await this.revision(existing.id, existing.version, context)
-        : null
-      const previous = before && {
-        key: before.key,
-        name: before.name,
-        description: before.description,
-        category_ids: before.category_ids,
-        fields: before.fields,
-      }
-      if (
-        existing &&
-        !existing.archived &&
-        isDeepStrictEqual(previous, definition)
-      )
-        continue
-      const id = existing?.id || `pat_${randomUUID()}`
-      const version = (existing?.version || 0) + 1
-      if (existing)
-        await manager.execute(
-          "update product_attribute_template set name=?,version=?,archived=false,updated_at=now() where id=?",
-          [definition.name, version, id]
-        )
-      else
-        await manager.execute(
-          "insert into product_attribute_template(id,key,name,version,source,archived) values(?,?,?,?,'configuration',false)",
-          [id, definition.key, definition.name, version]
-        )
-      await manager.execute(
-        "insert into product_attribute_revision(id,template_id,version,definition,actor_id) values(?,?,?,?::jsonb,'system:configuration')",
-        [`par_${randomUUID()}`, id, version, JSON.stringify(definition)]
-      )
-      changed++
-    }
-    const removed = (await manager.execute<Array<{ id: string }>>(
-      "select id,key from product_attribute_template where source='configuration' and archived=false"
-    )) as Array<{ id: string; key: string }>
-    for (const item of removed)
-      if (!configured.some((definition) => definition.key === item.key)) {
-        await manager.execute(
-          "update product_attribute_template set archived=true,updated_at=now() where id=?",
-          [item.id]
-        )
-        changed++
-      }
-    return { changed }
   }
 }

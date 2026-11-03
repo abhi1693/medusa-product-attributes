@@ -37,7 +37,7 @@ const template: TemplateRevision = {
   category_ids: ["cat_network"],
   version: 2,
   archived: false,
-  source: "admin",
+
   fields: [
     {
       ...emptyField(),

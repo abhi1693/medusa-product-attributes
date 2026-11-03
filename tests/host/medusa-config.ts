@@ -11,6 +11,7 @@ const actions = [
   "templates.write",
   "values.read",
   "values.write",
+  "metadata.export",
 ] as const
 const permission = (action: string) =>
   `product_attributes.${action.replace(".", "_")}`
@@ -31,7 +32,11 @@ const access: AccessControlOptions = {
         values_read: { permissions: [permission("values.read")] },
         values_write: { permissions: [permission("values.write")] },
         values_export: {
-          permissions: [permission("values.read"), permission("values.write")],
+          permissions: [
+            permission("values.read"),
+            permission("values.write"),
+            permission("metadata.export"),
+          ],
         },
       },
       profile: {
@@ -41,7 +46,11 @@ const access: AccessControlOptions = {
             item: {
               parameter: "id",
               profile: {
-                actions: { GET: "templates_read", POST: "templates_write" },
+                actions: {
+                  GET: "templates_read",
+                  POST: "templates_write",
+                  DELETE: "templates_write",
+                },
                 children: {
                   archive: commandProfile("templates_write"),
                   products: commandProfile("templates_read", "GET"),

@@ -112,7 +112,6 @@ export function resolveOptions(options: ProductAttributesOptions = {}) {
   const validated = z
     .object({
       metadata_key: key.default("product_attributes"),
-      templates: z.array(templateSchema).max(1000).default([]),
       register_native_hooks: z.boolean().default(true),
       authorize: z
         .custom<NonNullable<ProductAttributesOptions["authorize"]>>(
@@ -123,11 +122,7 @@ export function resolveOptions(options: ProductAttributesOptions = {}) {
     })
     .strict()
     .parse(options)
-  const templates = validated.templates
-  if (
-    new Set(templates.map((template) => template.key)).size !== templates.length
-  )
-    throw new Error("Configured template keys must be unique")
+
   return validated
 }
 
@@ -142,3 +137,12 @@ export function resolveModuleOptions(
 }
 
 export type { ProductAttributesOptions, TemplateDefinition } from "./types"
+
+export function defineTemplates(definitions: readonly TemplateDefinition[]) {
+  const parsed = z.array(templateSchema).max(1000).parse(definitions)
+  if (
+    new Set(parsed.map((definition) => definition.key)).size !== parsed.length
+  )
+    throw new Error("Template keys must be unique")
+  return parsed
+}

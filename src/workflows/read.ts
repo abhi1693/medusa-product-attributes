@@ -108,7 +108,8 @@ export const specificationVersion = (
 export async function productView(
   container: MedusaContainer,
   productId: string,
-  canWrite: boolean
+  canWrite: boolean,
+  canReadTemplates = true
 ): Promise<ProductAttributes> {
   const { product, service, specification, groups } = await productState(
     container,
@@ -137,14 +138,15 @@ export async function productView(
           true
         )
       : [],
-    templates: (await service.page({ limit: 1000 })).templates.map(
-      (template) => ({
-        ...template,
-        recommended: Boolean(
-          template.category_ids?.some((id) => categoryIds.has(id))
-        ),
-      })
-    ),
+    templates: canReadTemplates
+      ? (await service.page({ limit: 1000 })).templates.map((template) => ({
+          ...template,
+          recommended: Boolean(
+            template.category_ids?.some((id) => categoryIds.has(id))
+          ),
+        }))
+      : [],
     can_write: canWrite,
+    can_assign: canWrite && canReadTemplates,
   }
 }

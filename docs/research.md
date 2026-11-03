@@ -15,7 +15,7 @@ Research date: 2026-10-30. Target: Medusa 2.22.2, Medusa UI 4.2.9 and Vite 7.3.7
 
 ## Storage and evolution
 
-The accepted design keeps product and variant specification values in immutable module-owned revisions with an atomic current pointer and public native Product/Variant links. Native metadata is an optional one-way projection. Product assignment is explicit and pins a schema revision; a schema edit must not silently reinterpret existing product data. Merchant brands, categories and code-managed template declarations belong in application configuration.
+The accepted design keeps product and variant specification values in immutable module-owned revisions with an atomic current pointer and public native Product/Variant links. Native metadata is an optional one-way projection. Product assignment is explicit and pins a schema revision; a schema edit must not silently reinterpret existing product data. Merchant brands, categories and seed definitions belong in the consuming application; definitions are editable database records.
 
 Store readers receive only complete current revisions for published, channel-eligible native products and current native variants. There is no implicit last-published fallback. Storefront values and optional metadata exports must be safe for public disclosure. Search/filter/comparison flags describe downstream indexing and presentation; they are not confidentiality controls or a search engine implementation.
 
@@ -46,3 +46,9 @@ Physical/customs fields exist independently on native Product and Variant. Varia
 A product's immutable specification revision now pins multiple reusable definition revisions. Existing module transactions, concurrency checks, public Product/Variant links and normalized authorized Store reads remain. Duplicate group IDs or field keys are rejected at workflow and owning service boundaries. Groups are the existing reusable template concept, not another entity layer. Variant fields retain explicit scope without inheritance. Actual facets/indexing remain separate.
 
 The initial schema uses group composition. A forward schema migration converts an existing single assignment into a one-group snapshot and removes obsolete columns, preserving values and current pointers. This is a schema migration, not a compatibility reader or automatic catalog cleanup. Application-specific repairs remain explicit operations; no database reset or deployment is bundled.
+
+## Release audit: editable templates and permission boundaries
+
+Verified against the pinned Medusa 2.22.2 host. Runtime configuration no longer owns templates. The public service seeds validated definitions once and preserves database edits, archive state and deleted-key tombstones. Normal schema migration removes the obsolete origin column without rewriting immutable definitions or native commerce records.
+
+HTTP mutations require read and write grants, and assignment edits require global template-read access. Values-only readers retain assigned schema interpretation without access to the global catalog. Metadata export has an explicit application grant covering native metadata writes. Authorization callbacks grant only on literal true. Open Admin value and assignment drafts retain the schema and compare-and-swap base they were opened with; background query refresh cannot silently advance their token. Template adoption remains explicit and is checked against server-side typed/publication constraints.

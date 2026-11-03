@@ -128,7 +128,7 @@ test("create and revise a template through native Admin controls", async ({
     .getByRole("button", { name: "Create template", exact: true })
     .click()
   await expect(dialog).toHaveCount(0)
-  await page.getByRole("link", { name: /Device specifications/ }).click()
+  await page.getByRole("link", { name: /Device attributes/ }).click()
   await expect(
     page.getByRole("heading", { name: "Device attributes", exact: true })
   ).toBeVisible()
@@ -428,7 +428,7 @@ test("reader sees templates but cannot change them through the UI or API", async
     page.getByRole("button", { name: "Create template", exact: true })
   ).toBeDisabled()
   await expect(page.getByText(/Read-only access/)).toBeVisible()
-  await page.getByRole("link", { name: /Catalog specifications/ }).click()
+  await page.getByRole("link", { name: /Catalog attributes/ }).click()
   await expect(
     page.getByRole("button", { name: "Create version", exact: true })
   ).toBeDisabled()
@@ -771,9 +771,33 @@ test("template impact lists products pinned to earlier schema versions", async (
     fullPage: true,
   })
   await region.screenshot({ path: "test-results/template-impact-card.png" })
+  await page.goto(`/app/products/${product.id}`)
+  const attributes = page.getByRole("region", {
+    name: "Product attributes",
+    exact: true,
+  })
+  await attributes
+    .getByRole("button", { name: "Manage attribute templates", exact: true })
+    .click()
+  await expect(attributes.getByText("Version 1", { exact: true })).toBeVisible()
+  await attributes
+    .getByRole("button", { name: "Use latest version", exact: true })
+    .click()
+  await expect(attributes.getByText("Version 2", { exact: true })).toBeVisible()
+  await attributes
+    .getByRole("button", { name: "Save templates", exact: true })
+    .click()
+  await expect(
+    attributes.getByRole("button", { name: "Save templates", exact: true })
+  ).toHaveCount(0)
+  await page.reload()
+  const adopted = await (
+    await request.get(`${root}/products/${product.id}`, { headers })
+  ).json()
+  expect(adopted.groups[0].version).toBe(2)
   await page.goto(route)
   await expect(
-    page.getByRole("link", { name: /Accessory specifications/ })
+    page.getByRole("link", { name: /Accessory attributes/ })
   ).toBeVisible()
   await expect(
     page.getByRole("link", { name: /Network equipment/ })
@@ -920,4 +944,87 @@ test("several reusable groups edit and reload on native products with clear opti
   expect(other.groups.map((group: { id: string }) => group.id)).toContain(
     power.id
   )
+})
+
+test("value editors without template access receive only assigned definitions", async ({
+  request,
+}) => {
+  const headers = await tokenFor(request, "values_editor")
+  const path = `${root}/products/${fixture.product.id}`
+  const response = await request.get(path, { headers })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  const view = await response.json()
+  expect(view.groups.length).toBeGreaterThan(0)
+  expect(view.templates).toEqual([])
+  expect(view.can_write).toBe(true)
+  expect(view.can_assign).toBe(false)
+  expect((await request.get(`${root}/templates`, { headers })).status()).toBe(
+    403
+  )
+  expect(
+    (
+      await request.post(`${path}/groups`, {
+        headers,
+        data: { version: view.version, groups: [] },
+      })
+    ).status()
+  ).toBe(403)
+  expect(
+    (
+      await request.post(`${path}/export`, {
+        headers,
+        data: { version: view.version },
+      })
+    ).status()
+  ).toBe(403)
+  const saved = await request.post(`${path}/values`, {
+    headers,
+    data: { version: view.version, values: {} },
+  })
+  expect(saved.ok(), await saved.text()).toBeTruthy()
+  expect((await saved.json()).templates).toEqual([])
+})
+
+test("unused template deletion rejects stale versions and assigned templates", async ({
+  request,
+}) => {
+  const headers = await tokenFor(request)
+  const created = await request.post(`${root}/templates`, {
+    headers,
+    data: {
+      key: "delete_fixture",
+      name: "Disposable template",
+      fields: [
+        {
+          key: "reference",
+          label: "Reference",
+          type: "text",
+          scope: "product",
+          required: false,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+      ],
+    },
+  })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const { template } = await created.json()
+  const path = `${root}/templates/${template.id}`
+  expect(
+    (await request.delete(path, { headers, data: { version: 2 } })).status()
+  ).toBe(409)
+  const current = await (
+    await request.get(`${root}/products/${fixture.product.id}`, { headers })
+  ).json()
+  const assignedPath = `${root}/templates/${current.groups[0].id}`
+  const assigned = await request.delete(assignedPath, {
+    headers,
+    data: { version: current.groups[0].version },
+  })
+  expect(assigned.ok()).toBeFalsy()
+  expect(await assigned.text()).toContain("assigned products")
+  const deleted = await request.delete(path, { headers, data: { version: 1 } })
+  expect(deleted.ok(), await deleted.text()).toBeTruthy()
+  expect((await request.get(path, { headers })).status()).toBe(404)
 })

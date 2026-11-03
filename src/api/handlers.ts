@@ -125,6 +125,7 @@ export async function saveTemplate(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
+  await authorize(req, { action: "templates.read", template_id: req.params.id })
   await authorize(req, {
     action: "templates.write",
     template_id: req.params.id,
@@ -158,6 +159,7 @@ export async function archiveTemplate(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
+  await authorize(req, { action: "templates.read", template_id: req.params.id })
   await authorize(req, {
     action: "templates.write",
     template_id: req.params.id,
@@ -180,7 +182,8 @@ export async function getProduct(
     await productView(
       req.scope,
       req.params.id,
-      await allowed(req, { action: "values.write", product_id: req.params.id })
+      await allowed(req, { action: "values.write", product_id: req.params.id }),
+      await allowed(req, { action: "templates.read" })
     )
   )
 }
@@ -188,7 +191,9 @@ export async function assignProductGroups(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
+  await authorize(req, { action: "values.read", product_id: req.params.id })
   await authorize(req, { action: "values.write", product_id: req.params.id })
+  await authorize(req, { action: "templates.read" })
   res.json(
     await mutateProductAttributes(
       req.scope,
@@ -205,6 +210,7 @@ export async function saveProductValues(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
+  await authorize(req, { action: "values.read", product_id: req.params.id })
   await authorize(req, { action: "values.write", product_id: req.params.id })
   res.json(
     await mutateProductAttributes(
@@ -214,7 +220,8 @@ export async function saveProductValues(
         values: parse(valuesSchema, req.body),
       },
       true,
-      req.auth_context.actor_id
+      req.auth_context.actor_id,
+      await allowed(req, { action: "templates.read" })
     )
   )
 }
@@ -234,6 +241,7 @@ export async function exportProductMetadata(
 ) {
   await authorize(req, { action: "values.read", product_id: req.params.id })
   await authorize(req, { action: "values.write", product_id: req.params.id })
+  await authorize(req, { action: "metadata.export", product_id: req.params.id })
   const input = parse(exportSchema, req.body)
   res.json(
     await exportProductAttributesMetadata(
@@ -309,6 +317,7 @@ export async function deleteTemplate(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
+  await authorize(req, { action: "templates.read", template_id: req.params.id })
   await authorize(req, {
     action: "templates.write",
     template_id: req.params.id,

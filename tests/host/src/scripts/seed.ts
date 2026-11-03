@@ -34,7 +34,7 @@ export default async function seed({ container }: ExecArgs) {
     string,
     { id: string; email: string; password: string }
   > = {}
-  for (const name of ["administrator", "reader", "editor"]) {
+  for (const name of ["administrator", "reader", "editor", "values_editor"]) {
     const email = `attributes-${name}@example.test`
     const password = randomBytes(24).toString("base64url")
     const user = await users.createUsers({ email, first_name: name })
@@ -49,15 +49,17 @@ export default async function seed({ container }: ExecArgs) {
     credentials[name] = { id: user.id, email, password }
   }
   await access.bootstrap(credentials.administrator.id)
-  for (const name of ["reader", "editor"]) {
+  for (const name of ["reader", "editor", "values_editor"]) {
     const { result } = await access.mutate(credentials.administrator.id, {
       kind: "create_role",
       name: `Fixture ${name}`,
       permissions: [
         "products.view",
-        "product_attributes.templates_read",
+        ...(name === "values_editor"
+          ? []
+          : ["product_attributes.templates_read"]),
         "product_attributes.values_read",
-        ...(name === "editor" ? ["product_attributes.values_write"] : []),
+        ...(name !== "reader" ? ["product_attributes.values_write"] : []),
       ],
     })
     await access.mutate(credentials.administrator.id, {

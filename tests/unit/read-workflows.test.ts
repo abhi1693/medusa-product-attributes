@@ -101,3 +101,13 @@ describe("owning-module specification reads", () => {
     ).toBe("variants.new.values.ports")
   })
 })
+
+it("returns assigned schemas but withholds the global catalog from values-only readers", async () => {
+  const h = harness()
+  const view = await productView(h.container, h.product.id, true, false)
+  expect(view.groups).toEqual([template])
+  expect(view.templates).toEqual([])
+  expect(view.can_write).toBe(true)
+  expect(view.can_assign).toBe(false)
+  expect(h.service.page).not.toHaveBeenCalled()
+})

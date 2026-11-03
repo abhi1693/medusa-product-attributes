@@ -98,7 +98,6 @@ const ProductAttributesPage = () => {
               <Table.Row>
                 <Table.HeaderCell>Name</Table.HeaderCell>
                 <Table.HeaderCell>Version</Table.HeaderCell>
-                <Table.HeaderCell>Source</Table.HeaderCell>
                 <Table.HeaderCell>Status</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
@@ -117,18 +116,6 @@ const ProductAttributesPage = () => {
                     </Link>
                   </Table.Cell>
                   <Table.Cell>{template.version}</Table.Cell>
-                  <Table.Cell>
-                    <Badge
-                      size="xsmall"
-                      color={
-                        template.source === "configuration" ? "purple" : "grey"
-                      }
-                    >
-                      {template.source === "configuration"
-                        ? "Configuration"
-                        : "Admin"}
-                    </Badge>
-                  </Table.Cell>
                   <Table.Cell>
                     <Badge
                       size="xsmall"

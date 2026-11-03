@@ -771,52 +771,41 @@ export default async function integration({ container }: ExecArgs) {
     await service.specification(otherId),
     "Explicit native restore + Link.restore restores owned snapshot"
   )
-  // Hosts resolve native categories after migration, then synchronize complete
-  // app-owned definitions without mutating plugin configuration at startup.
+  // Seeding resolves native identities once. Later staff edits and deletions survive retries.
   const category = await products.createProductCategories({
     name: `Definitions ${suffix}`,
     handle: `definitions-${suffix}`,
   })
-  const configuredDefinition = defineTemplate({
+  const definitionSeed = defineTemplate({
     ...definition,
     key: `resolved_${suffix}`,
     category_ids: [category.id],
   })
-  const definitions = Object.freeze([configuredDefinition])
-  const configurationBefore = JSON.stringify(service.configuration.templates)
-  assert.equal((await service.synchronizeDefinitions(definitions)).changed, 1)
-  const synced = (await service.page({ q: configuredDefinition.key }))
-    .templates[0]
-  assert.equal(synced.source, "configuration")
-  assert.deepEqual((await service.revision(synced.id)).category_ids, [
+  const definitions = Object.freeze([definitionSeed])
+  assert.equal((await service.seedDefinitions(definitions)).created, 1)
+  const seeded = (await service.page({ q: definitionSeed.key })).templates[0]
+  assert.deepEqual((await service.revision(seeded.id)).category_ids, [
     category.id,
   ])
-  assert.equal(
-    (await service.synchronizeDefinitions(definitions)).changed,
-    0,
-    "Resolved definitions synchronize idempotently"
-  )
-  assert.equal(
-    JSON.stringify(service.configuration.templates),
-    configurationBefore,
-    "Explicit definitions never mutate module configuration"
-  )
-  assert.equal(
-    (
-      await service.synchronizeDefinitions([
-        { ...configuredDefinition, name: "Resolved definition revised" },
-      ])
-    ).changed,
+  const revised = await service.save(
+    { ...definitionSeed, name: "Staff revised definition" },
+    "user_integration",
+    seeded.id,
     1
   )
-  assert.equal((await service.revision(synced.id)).version, 2)
+  assert.equal((await service.seedDefinitions(definitions)).created, 0)
+  assert.equal((await service.revision(seeded.id)).name, revised.name)
+  assert.equal((await service.revision(seeded.id, 1)).name, definitionSeed.name)
+  await service.archive(seeded.id, 2)
+  assert.equal((await service.seedDefinitions(definitions)).created, 0)
+  assert.equal((await service.revision(seeded.id)).archived, true)
+  await service.remove(seeded.id, 2)
+  assert.equal((await service.seedDefinitions(definitions)).created, 0)
   assert.equal(
-    (await service.revision(synced.id, 1)).name,
-    configuredDefinition.name
+    (await service.page({ q: definitionSeed.key, include_archived: true }))
+      .templates.length,
+    0
   )
-  assert.equal((await service.synchronizeDefinitions([])).changed, 1)
-  assert.equal((await service.revision(synced.id)).archived, true)
-  assert.equal((await service.synchronizeDefinitions([])).changed, 0)
   await verifyAtomicInitialization(container, suffix)
   console.info(
     "Owned specifications integration passed: transactions/CAS, native links, immutable revisions, native rollback isolation, metadata independence and delete/restore"

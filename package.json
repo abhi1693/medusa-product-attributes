@@ -1,7 +1,7 @@
 {
   "name": "@abhi1693/medusa-product-attributes",
   "version": "0.0.1",
-  "description": "Typed product specifications and immutable template revisions for Medusa v2",
+  "description": "Typed product attributes, editable templates and immutable product/variant revisions for Medusa v2",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -45,10 +45,6 @@
     "./workflows": {
       "types": "./.medusa/server/src/workflows/index.d.ts",
       "default": "./.medusa/server/src/workflows/index.js"
-    },
-    "./sync-templates": {
-      "types": "./.medusa/server/src/scripts/sync-templates.d.ts",
-      "default": "./.medusa/server/src/scripts/sync-templates.js"
     },
     "./client": {
       "types": "./.medusa/server/src/client.d.ts",

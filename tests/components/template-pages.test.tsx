@@ -64,7 +64,7 @@ const template: TemplateRevision = {
   key: "switch",
   name: "Network switch",
   version: 2,
-  source: "admin",
+
   archived: false,
   description: "Network device attributes",
   category_ids: [],
@@ -93,10 +93,7 @@ const template: TemplateRevision = {
   ],
 }
 const listData = (can_write = true) => ({
-  templates: [
-    template,
-    { ...template, id: "configured", source: "configuration", archived: true },
-  ],
+  templates: [template, { ...template, id: "archived", archived: true }],
   count: 41,
   offset: 0,
   limit: 20,
@@ -154,7 +151,7 @@ test("template list searches, paginates, includes archived records and creates s
   expect(
     (await screen.findAllByRole("link", { name: /Network switch switch/ }))[0]
   ).toHaveAttribute("href", "/settings/product-attributes/template")
-  expect(screen.getByText("Configuration")).toBeInTheDocument()
+  expect(screen.getByText("Active")).toBeInTheDocument()
   expect(screen.getByText("Archived")).toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "Next" }))
   await waitFor(() =>
@@ -267,21 +264,20 @@ test("archival requires confirmation, preserves failure feedback and recovers on
   )
 })
 
-test("managed, archived and read-only templates cannot be revised or archived", async () => {
+test("archived and read-only templates cannot be revised or archived", async () => {
   mocks.template.mockResolvedValue({
     ...detailData(false),
     template: {
       ...template,
-      source: "configuration",
+
       description: "",
       archived: true,
     },
   })
   mount(true)
   expect(
-    await screen.findByText("Managed in configuration")
+    await screen.findByRole("heading", { name: "Network switch" })
   ).toBeInTheDocument()
-  expect(screen.getByText(/Update this definition/)).toBeInTheDocument()
   expect(screen.getByText("You have read-only access.")).toBeInTheDocument()
   expect(screen.getByRole("button", { name: "Create version" })).toBeDisabled()
   expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled()

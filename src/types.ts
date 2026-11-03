@@ -32,7 +32,6 @@ export type TemplateSummary = {
   key: string
   name: string
   version: number
-  source: "configuration" | "admin"
   archived: boolean
   category_ids?: string[]
   recommended?: boolean
@@ -63,6 +62,7 @@ export type ProductAttributes = {
   validation: ValidationIssue[]
   templates: TemplateSummary[]
   can_write: boolean
+  can_assign: boolean
 }
 export type StoreProductAttributes = {
   product_id: string
@@ -123,7 +123,11 @@ export type SpecificationWriteReceipt = {
   created_variants: Array<{ id: string; variant_id: string }>
 }
 export type AttributeAction =
-  "templates.read" | "templates.write" | "values.read" | "values.write"
+  | "templates.read"
+  | "templates.write"
+  | "values.read"
+  | "values.write"
+  | "metadata.export"
 export type AuthorizationContext = {
   action: AttributeAction
   product_id?: string
@@ -131,7 +135,6 @@ export type AuthorizationContext = {
 }
 export type ProductAttributesOptions = {
   metadata_key?: string
-  templates?: TemplateDefinition[]
   register_native_hooks?: boolean
   authorize?: (
     request: unknown,

@@ -63,7 +63,7 @@ const revision = {
   category_ids: [],
   id: "tpl_switch",
   version: 2,
-  source: "admin",
+
   archived: false,
 }
 
@@ -538,6 +538,7 @@ describe("Admin product endpoints", () => {
     expect(workflows.productView).toHaveBeenCalledWith(
       request.scope,
       "prod_switch",
+      false,
       false
     )
     await checkProduct(request, response)
@@ -586,7 +587,8 @@ describe("Admin product endpoints", () => {
       request.scope,
       { product_id: "prod_switch", values: request.body },
       true,
-      "user_admin"
+      "user_admin",
+      true
     )
     const conflict = new MedusaError(
       MedusaError.Types.CONFLICT,
@@ -645,6 +647,7 @@ describe("explicit metadata export", () => {
     expect(adapter.mock.calls.map(([, context]) => context)).toEqual([
       { action: "values.read", product_id: "prod_switch" },
       { action: "values.write", product_id: "prod_switch" },
+      { action: "metadata.export", product_id: "prod_switch" },
     ])
     expect(
       workflows.exportProductAttributesMetadata
@@ -1046,4 +1049,68 @@ test("template DELETE authorizes first, requires a version and delegates safe de
     type: MedusaError.Types.FORBIDDEN,
   })
   expect(h.service.remove).toHaveBeenCalledTimes(1)
+})
+
+test("authorization callbacks must explicitly return true", async () => {
+  const { request, service } = fixture()
+  for (const result of ["true", 1, {}, undefined, null]) {
+    service.configuration.authorize = vi.fn().mockResolvedValue(result)
+    await expect(
+      authorize(request, { action: "values.read", product_id: "prod_switch" })
+    ).rejects.toMatchObject({ type: MedusaError.Types.FORBIDDEN })
+  }
+})
+
+test("mutations require reads and metadata export requires its own grant", async () => {
+  for (const handler of [
+    saveTemplate,
+    archiveTemplate,
+    deleteTemplate,
+    assignProductGroups,
+    saveProductValues,
+    exportProductMetadata,
+  ]) {
+    const { request, response, service } = fixture({ body: { version: 2 } })
+    service.configuration.authorize = vi
+      .fn()
+      .mockImplementation(async (_req, context: any) =>
+        context.action.endsWith(".write")
+      )
+    await expect(handler(request, response)).rejects.toMatchObject({
+      type: MedusaError.Types.FORBIDDEN,
+    })
+    expect(service.save).not.toHaveBeenCalled()
+    expect(service.archive).not.toHaveBeenCalled()
+    expect(service.remove).not.toHaveBeenCalled()
+    expect(response.json).not.toHaveBeenCalled()
+  }
+  const { request, response, service } = fixture({
+    body: { version: "revision" },
+  })
+  service.configuration.authorize = vi
+    .fn()
+    .mockImplementation(
+      async (_req, context: any) => context.action !== "metadata.export"
+    )
+  await expect(exportProductMetadata(request, response)).rejects.toMatchObject({
+    type: MedusaError.Types.FORBIDDEN,
+  })
+  expect(workflows.exportProductAttributesMetadata).not.toHaveBeenCalled()
+  service.configuration.authorize = vi
+    .fn()
+    .mockImplementation(
+      async (_req, context: any) => context.action !== "templates.read"
+    )
+  await expect(assignProductGroups(request, response)).rejects.toMatchObject({
+    type: MedusaError.Types.FORBIDDEN,
+  })
+  request.body = { version: "revision", values: { ports: 24 } }
+  await saveProductValues(request, response)
+  expect(workflows.mutateProductAttributes).toHaveBeenCalledWith(
+    request.scope,
+    { product_id: "prod_switch", values: request.body },
+    true,
+    "user_admin",
+    false
+  )
 })

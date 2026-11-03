@@ -5,145 +5,123 @@
 [![MIT license](https://img.shields.io/github/license/abhi1693/medusa-product-attributes)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-abhi1693-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/abhi1693)
 
-Typed product specifications composed from reusable groups for Medusa v2. Attach several groups to a product and edit their labelled fields with normal Admin controls.
+Reusable typed product attributes for Medusa v2. Create templates in Admin, assign several to a product, choose the applicable fields, and edit product or variant values with normal controls.
 
-The plugin owns template definitions and immutable specification revisions linked to native Medusa Products and Variants. Your application supplies its categories, brands and authorization policy. Native metadata can be an optional derived export.
-
-Medusa's built-in Attributes fields continue to hold dimensions, weight and customs information. This plugin adds merchant-defined technical specifications such as interface types, port counts and power budgets, with reusable templates and typed validation. Native product options continue to define purchasable variant choices.
-
-Development preview: the first release has not been published to npm. Use a reviewed source revision or built archive for evaluation. The [storage design](docs/storage-decision.md) preserves specification edits independently of native Product rollback.
+Native Medusa fields remain authoritative for dimensions, weight, customs information, inventory and prices. Native options define purchasable variants. This plugin owns additional attribute definitions and immutable value revisions linked to those native Products and Variants.
 
 ## Capabilities
 
-| Capability                 | Behavior                                                                                                                                                          |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Typed specifications       | Text, numbers with a declared unit and bounds, boolean values, single choice and multiple choices.                                                                |
-| Product and variant fields | Templates distinguish shared product data from sellable-configuration data.                                                                                       |
-| Native Admin editing       | Settings pages manage templates; product and variant detail widgets expose specification editing.                                                                 |
-| Stable schemas             | Templates have stable keys and immutable versions. Each assigned group pins its definition revision. Definition edits do not silently reinterpret product values. |
-| Incremental authoring      | Drafts can be incomplete. Publication validation reports missing or invalid required specifications.                                                              |
-| Application configuration  | Declare templates in code or create them in Admin. Merchant-specific definitions remain outside the plugin.                                                       |
-| Extensible authorization   | Use Medusa authentication with an application-supplied authorization callback. A particular RBAC package is not required.                                         |
-| Storefront contract        | Normalized typed values and search/filter/comparison flags support downstream integrations. Storefront UI and search indexing are separate work.                  |
+| Capability                | Behavior                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typed fields              | Text, finite numbers with units and bounds, Yes/No, single choice and multiple choices. Unset remains distinct from zero and No.                              |
+| Editable templates        | Create, duplicate, revise, archive and delete unused templates in Settings → Attribute templates. Stable keys and immutable versions preserve interpretation. |
+| Product applicability     | Assign up to 30 templates per product, selecting the fields that apply. Category associations offer recommendations without assigning anything automatically. |
+| Product and variant scope | Shared product facts and independent native variant values. There is no implicit inheritance or invented variant combination.                                 |
+| Focused editing           | Product attributes and Variant attributes widgets use native Admin drawers, validation feedback, confirmed discard and stale-write recovery.                  |
+| Shallow sections          | One optional subsection heading groups independently typed fields without nested JSON values.                                                                 |
+| Publication checks        | Partial drafts are allowed. Required applicable fields must be complete for published products and current variants.                                          |
+| Store API                 | Typed current values for eligible published products in the publishable key’s sales channel.                                                                  |
+| Optional authorization    | Native Medusa authentication plus an application-supplied permission adapter; no specific RBAC package required.                                              |
 
-The [storefront filtering contract](docs/storefront-filtering.md) explains stable choice codes, numeric units, schema-version interpretation and variant grouping, together with the backend query/index work required before exposing filters or facet counts.
+![Native Admin editor with reusable attribute templates](docs/assets/multiple-groups-editor.png)
 
-## Admin preview
+## Install and configure
 
-Manage reusable schemas from **Settings → Specification groups**, including their current version and source.
-
-Each product can have several groups, such as Connectivity, Power and Software. A group is the reusable template; there is no second group/template hierarchy. Manage applicability on the product and edit numeric, choice and Yes/No fields in a grouped drawer. Blank values remain distinct from zero and No.
-
-Native product/variant fields remain authoritative for physical and customs attributes. The application must declare its measurement-unit convention and map only verified facts; device and packed shipping measurements are different.
-
-![Native Admin editor with reusable Connectivity, Power and Software groups](docs/assets/multiple-groups-editor.png)
-
-## Development
-
-Requires Docker Compose. Node, npm, Medusa and browser tools run inside containers. The validated dependency baseline is Medusa **2.22.2**, UI **4.2.9**, Vite **7.3.7**, Node **24** and npm **11.19.0**.
-
-Run commands from the repository root:
+Validated against Medusa **2.22.2**, UI **4.2.9**, Vite **7.3.7**, Node **24** and npm **11.19.0**. Node 22.22 or newer is required. The peer range permits compatible Medusa v2 versions; the pinned baseline is the tested one.
 
 ```sh
-docker compose --profile tools run --rm --build --no-deps tooling npm run pack:local
+npm install @abhi1693/medusa-product-attributes@0.0.1
 ```
 
-The archive is generated at `artifacts/abhi1693-medusa-product-attributes-0.0.1.tgz` inside the shared development volume. The included isolated Medusa host consumes this built archive rather than a source link. See [development setup](docs/development.md) for administrator bootstrap, migration ordering and CI commands.
-
-Normal Compose startup does not run unit, integration or browser tests. Select `compose.ci.yaml` explicitly when reproducing CI.
-
-## Application configuration
-
-Install the reviewed built archive in your Medusa application and register the plugin:
+Register the plugin once in your application’s `medusa-config.ts`:
 
 ```ts
 import { defineConfig } from "@medusajs/framework/utils"
-import type { ProductAttributesOptions } from "@abhi1693/medusa-product-attributes/types"
-
-const attributes: ProductAttributesOptions = {
-  templates: [
-    {
-      key: "equipment",
-      name: "Equipment specifications",
-      fields: [
-        {
-          key: "capacity",
-          label: "Capacity",
-          type: "number",
-          scope: "product",
-          unit: "Gbps",
-          min: 0,
-          required: true,
-          searchable: false,
-          filterable: true,
-          comparable: true,
-        },
-      ],
-    },
-  ],
-}
 
 module.exports = defineConfig({
-  // ...projectConfig...
-  plugins: [
-    { resolve: "@abhi1693/medusa-product-attributes", options: attributes },
-  ],
+  // ...projectConfig and other plugins...
+  plugins: [{ resolve: "@abhi1693/medusa-product-attributes", options: {} }],
 })
 ```
 
-Run native migrations before starting application processes. To synchronize configured templates, add a CLI wrapper:
+Run your application’s normal `medusa db:migrate` before starting it. Review [dependency compatibility](docs/dependency-compatibility.md): dependency overrides in this plugin are not inherited by consuming applications. See [release notes](docs/releases/0.0.1.md) for the first release and migration details.
+
+Create definitions in **Settings → Attribute templates**. Application-owned bootstrap scripts may call the public service’s `seedDefinitions(definitions, actorId)` after migrations and after resolving native category IDs. Seeding creates missing definitions once and preserves staff edits, archives and deletion tombstones on replay. Definitions remain editable database records; runtime configuration does not own or overwrite them.
+
+Use `defineTemplate` or `defineTemplates` from the `/config` export to validate definitions before seeding. Template keys and field keys are stable identifiers; use human-readable labels separately. Every field declares `type`, `scope`, `required`, `searchable`, `filterable` and `comparable`. Numeric fields may declare `unit`, `min` and `max`; select fields require unique `{ value, label }` choices. Optional `subsection` is a single heading.
+
+## Backend integration
+
+The `/client` export provides a browser ESM and server CommonJS client using an authenticated transport. For example, pass an application’s configured Medusa SDK client:
 
 ```ts
-// src/scripts/sync-product-attributes.ts
-export { default } from "@abhi1693/medusa-product-attributes/sync-templates"
-```
+import { createProductAttributesClient } from "@abhi1693/medusa-product-attributes/client"
 
-Include this CLI command after migrations in your application's migration service. The public module service also exposes `synchronize()`. Synchronization preserves stable keys and existing assignments; changed definitions create immutable revisions. Do not register a second copy of the module.
-
-An application's root dependency overrides are not inherited from this plugin. Review [dependency compatibility](docs/dependency-compatibility.md) when using the pinned Medusa baseline.
-
-## Product group contract
-
-Use the same reusable definition on multiple products. Product and variant values remain in one immutable product snapshot, with separate scopes and no implicit inheritance.
-
-```ts
-const assigned = await client.assignGroups(productId, {
+const attributes = createProductAttributesClient(sdk.client)
+const current = await attributes.product(productId)
+const assigned = await attributes.assignGroups(productId, {
   version: current.version,
   groups: [
-    { template_id: connectivity.id, template_version: connectivity.version },
-    { template_id: power.id, template_version: power.version },
+    {
+      template_id: connectivity.id,
+      template_version: connectivity.version,
+      field_keys: ["port_count", "interfaces"],
+    },
   ],
 })
-await client.saveValues(productId, {
+await attributes.saveValues(productId, {
   version: assigned.version,
-  values: { port_count: 8, max_power_w: 9 },
+  values: { port_count: 8, interfaces: ["ethernet"] },
 })
 ```
 
-The Admin endpoint is `POST /admin/product-attributes/products/:id/groups`. Membership is a complete ordered list, limited to 30 groups. Repeated group IDs and duplicate field keys across groups are rejected. Each fact has one owning definition; do not create editable copies of native fields. Removing a group removes its fields from the current snapshot, preserving immutable history and unrelated values.
+Assignments replace the complete ordered template list. Omit `field_keys` to include all fields of the pinned revision, or supply a nonempty unique selection. Duplicate template IDs and duplicate field keys across assigned templates are rejected. Removed fields leave the current snapshot while immutable history remains. A value patch preserves unrelated fields; `null` explicitly clears a value.
 
-The normalized product and Store responses expose `groups`, typed product `values` and current native `variants`. No serialized vendor sections or raw audit graph is exposed. The previous singular assignment endpoint/shape is removed. The schema migration can carry an earlier single assignment into a one-group snapshot without changing its values. It never resets product data. Application-specific cleanup/backfill is a separate explicit operation.
+Template edits create a new version without changing existing product assignments. **Use latest version** explicitly adopts a newer definition and retains compatible selected keys and values. Validation rejects incompatible values and incomplete required data on published products. Complete new required fields through a trusted combined workflow or the normal draft authoring lifecycle before publication.
 
-## Data and authorization boundaries
+| API                                                       | Purpose                                                                                |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET/POST /admin/product-attributes/templates`            | List or create templates.                                                              |
+| `GET/POST/DELETE /admin/product-attributes/templates/:id` | Read history, create a revision or delete an unused template with an expected version. |
+| `POST /admin/product-attributes/templates/:id/archive`    | Archive a template; existing assignments remain valid.                                 |
+| `GET /admin/product-attributes/templates/:id/products`    | Paginated assignment impact, including earlier pinned versions.                        |
+| `GET /admin/product-attributes/products/:id`              | Assigned schemas, current values, validation and capabilities.                         |
+| `POST /admin/product-attributes/products/:id/groups`      | Replace assignments with an expected current token.                                    |
+| `POST /admin/product-attributes/products/:id/values`      | Patch typed product or variant values with current tokens.                             |
+| `POST /admin/product-attributes/products/:id/validate`    | Check required current product and variant fields.                                     |
+| `POST /admin/product-attributes/products/:id/export`      | Explicit optional one-way native metadata projection.                                  |
+| `GET /store/products/:id/attributes`                      | Complete current public attributes for the eligible channel.                           |
 
-Assign several groups explicitly to a product. Category associations recommend groups; they do not silently change membership. Schema changes create a new version. Archiving prevents new assignments while preserving existing versions and values.
+## Authorization and data boundaries
 
-The Store endpoint serves a complete current specification revision only for a native published product in the publishable key's sales channel. Native Product rollback cannot overwrite the module's specification values. Incomplete or ineligible records are withheld; the endpoint does not fall back to an older revision. The search/filter/comparison flags describe intended presentation and indexing; they are not confidentiality controls. Do not place private operational notes or secrets in storefront specification fields or metadata exports.
+Without an `authorize` callback, authenticated native administrators can manage attributes. An application may supply `ProductAttributesOptions.authorize(request, context)`, returning **true** explicitly to grant `templates.read`, `templates.write`, `values.read`, `values.write` or `metadata.export`. Exceptions fail closed. Context includes the relevant product or template ID where applicable. The adapter must enforce application policy on the server.
 
-Custom Admin APIs require a native Medusa user. Without an authorization callback, authenticated administrators can manage attributes. Supply `authorize(request, context)` to enforce fine-grained application permissions for `templates.read`, `templates.write`, `values.read` and `values.write`. The server checks permission independently of button visibility.
+Mutations require read and write permission. Assignment editing also requires global template-read access. A value reader receives the assigned schemas needed to interpret values but cannot obtain the global template catalog without its read grant. The response exposes `can_write` and `can_assign` separately. Metadata export requires its own grant in addition to value read/write; the application must include permission to update native Product/Variant metadata in that grant.
 
-Specification revisions and their current pointers commit within one owning module transaction. Native workflow hooks validate publication and variant changes after native writes; native failures use workflow compensation. This does not create a single transaction across modules or globally serialize native workflows. Hooks support one handler each; applications already consuming those hooks must compose the public validation handlers explicitly. Trusted scripts that call native module services directly must integrate validation themselves. See [framework evidence and limits](docs/research.md).
+Canonical revisions and pointers commit atomically within this plugin’s module. Native workflow hooks validate publication and variant changes; native failures use workflow compensation. This is not one transaction across modules and does not globally serialize native workflows. Specification revisions survive unrelated native Product compensation. Public links support deletion/restoration and retry. See the accepted [storage design](docs/storage-decision.md).
+
+Native workflow hooks support one handler each. Applications already using those hooks must set `register_native_hooks: false` and compose the exported validation handlers in their own hook. Trusted scripts calling native services directly must integrate validation themselves. See [framework evidence](docs/research.md).
+
+The Store endpoint requires a complete current revision, native publication and channel eligibility. It does not fall back to an older revision. Do not put private notes or secrets in public attributes or optional metadata exports. Native relation guards prevent exposing internal history through standard Admin/Store product projections.
+
+## Limits
+
+Searchable, filterable and comparable are descriptive flags. This release does not provide a storefront UI, search index, filter query engine, facet counts or indexing event pipeline. The [storefront filtering contract](docs/storefront-filtering.md) describes the separate work required.
+
+Numbers support finite decimals, not an integer-only constraint. Units are declarations, not automatic conversion. Templates have at most 100 fields; select fields have at most 100 choices. Product and variant fields have separate scopes. There is no arbitrary nested value model, file attribute type or automatic migration of existing catalog content.
+
+## Development and verification
+
+Use Docker Compose from the repository root. Node, npm, Medusa and Playwright run inside containers. Normal startup does not run tests or seed merchant data.
+
+```sh
+docker compose --profile tools run --rm --build --no-deps tooling npm run pack:local
+docker compose -f compose.yaml -f compose.ci.yaml --profile ci run --rm --build checks sh -ec "npm run format:check && npm run typecheck"
+docker compose -f compose.yaml -f compose.ci.yaml --profile ci up --build --abort-on-container-exit --exit-code-from test test
+```
+
+Checks cover unit/component behavior with 100% per-file coverage, package exports, publisher recovery, native PostgreSQL lifecycle and compensation, clean locked installation, native Admin build and browser journeys. See [development](docs/development.md) and [release procedure](docs/releasing.md).
 
 ## License
 
 MIT © Abhimanyu Saharan.
-
-### Applicable fields and editable seeds
-
-A product can reuse multiple specification templates and explicitly select the fields that apply from each one. An omitted `field_keys` selection includes all fields; an explicit selection must contain unique keys from the pinned revision. Admin editing, validation and Store responses all use that same selection. Changing one template selection preserves facts owned by the other assignments.
-
-Use `service.seedDefinitions(definitions, actorId)` for editable database definitions. It creates missing Admin templates once and preserves existing edits, archives and deletion tombstones on replay. Configuration synchronization remains an explicit separate capability for applications that intentionally require code-managed definitions.
-
-Settings → Attribute templates supports deletion of unused Admin templates. Remove current product assignments first, or archive a template to preserve them. Deletion retains immutable history; pinned historical revisions remain readable for compensation and audit. All writes retain the existing authorization and stale-version checks.
-
-Fields can include an optional `subsection` heading for one level of presentation inside an attribute template. The editor groups related fields under that heading while preserving their independent typed values, stable keys and units. Subsections do not introduce nested values or change filter/comparison identities.

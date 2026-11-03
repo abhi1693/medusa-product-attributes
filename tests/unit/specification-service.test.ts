@@ -13,7 +13,7 @@ const template: TemplateRevision = {
   key: "switch",
   name: "Switch",
   version: 3,
-  source: "admin",
+
   archived: false,
   description: "",
   category_ids: [],

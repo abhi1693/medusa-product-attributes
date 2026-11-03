@@ -127,12 +127,7 @@ const TemplateDetailPage = () => {
             <Button
               size="small"
               variant="secondary"
-              disabled={
-                !can_write ||
-                template.source === "configuration" ||
-                template.archived ||
-                pending
-              }
+              disabled={!can_write || template.archived || pending}
               onClick={() => {
                 void archive()
               }}
@@ -143,9 +138,7 @@ const TemplateDetailPage = () => {
             <Button
               size="small"
               variant="danger"
-              disabled={
-                !can_write || template.source === "configuration" || pending
-              }
+              disabled={!can_write || pending}
               onClick={() => {
                 void remove()
               }}
@@ -154,11 +147,7 @@ const TemplateDetailPage = () => {
             </Button>
             <Button
               size="small"
-              disabled={
-                !can_write ||
-                template.source === "configuration" ||
-                template.archived
-              }
+              disabled={!can_write || template.archived}
               onClick={() => setEditing("edit")}
             >
               Create version
@@ -170,21 +159,10 @@ const TemplateDetailPage = () => {
             <Badge size="xsmall" color={template.archived ? "grey" : "green"}>
               {template.archived ? "Archived" : "Active"}
             </Badge>
-            <Badge size="xsmall" color="grey">
-              {template.source === "configuration"
-                ? "Managed in configuration"
-                : "Managed in Admin"}
-            </Badge>
           </div>
           {template.description && (
             <Text size="small" className="text-ui-fg-subtle">
               {template.description}
-            </Text>
-          )}
-          {template.source === "configuration" && (
-            <Text size="small" className="text-ui-fg-subtle">
-              Update this definition in your application configuration, or
-              duplicate it to create an editable template.
             </Text>
           )}
           {!can_write && (

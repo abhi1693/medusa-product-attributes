@@ -294,7 +294,8 @@ export async function mutateProductAttributes(
   container: MedusaContainer,
   input: AttributesMutation,
   canWrite = true,
-  actorId = "system:workflow"
+  actorId = "system:workflow",
+  canReadTemplates = true
 ) {
   const locking = container.resolve<{
     execute<T>(
@@ -309,7 +310,12 @@ export async function mutateProductAttributes(
       await writeAttributesWorkflow(container).run({
         input: { ...input, actor_id: actorId },
       })
-      return productView(container, input.product_id, canWrite)
+      return productView(
+        container,
+        input.product_id,
+        canWrite,
+        canReadTemplates
+      )
     },
     { timeout: 10 }
   )
