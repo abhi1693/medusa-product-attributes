@@ -8,6 +8,7 @@ export type AttributeField = {
   key: string
   label: string
   help?: string
+  subsection?: string
   type: AttributeType
   scope: "product" | "variant"
   required: boolean

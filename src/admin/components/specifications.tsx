@@ -17,6 +17,7 @@ import type {
   TemplateRevision,
 } from "../../types"
 import { attributesApi, attributesKeys } from "../lib/api"
+import { attributeSections } from "../lib/attribute-sections"
 import { restoreFocus } from "../lib/focus"
 import { AttributeInput, formatAttributeValue } from "./attribute-input"
 import { errorMessage, Feedback } from "./feedback"
@@ -175,25 +176,37 @@ const ValuesEditor = ({
               {view.groups.map((group) => (
                 <section key={group.id} className="flex flex-col gap-4">
                   <Heading level="h3">{group.name}</Heading>
-                  {group.fields
-                    .filter(
+                  {attributeSections(
+                    group.fields.filter(
                       (field) =>
                         field.scope === (variantId ? "variant" : "product")
                     )
-                    .map((field) => (
-                      <AttributeInput
-                        key={field.key}
-                        field={field}
-                        value={values[field.key]}
-                        onChange={(value) => {
-                          setValues((current) => ({
-                            ...current,
-                            [field.key]: value,
-                          }))
-                          setDirty(true)
-                        }}
-                      />
-                    ))}
+                  ).map((section) => (
+                    <div
+                      key={section.name || ""}
+                      className="flex flex-col gap-4"
+                    >
+                      {section.name && (
+                        <h4 className="text-sm font-medium text-ui-fg-base">
+                          {section.name}
+                        </h4>
+                      )}
+                      {section.fields.map((field) => (
+                        <AttributeInput
+                          key={field.key}
+                          field={field}
+                          value={values[field.key]}
+                          onChange={(value) => {
+                            setValues((current) => ({
+                              ...current,
+                              [field.key]: value,
+                            }))
+                            setDirty(true)
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ))}
                 </section>
               ))}
             </fieldset>
@@ -430,27 +443,35 @@ export const Specifications = ({
               <Heading level="h3" className="px-6 py-3">
                 {group.name}
               </Heading>
-              <dl>
-                {group.fields
-                  .filter(
-                    (field) =>
-                      field.scope === (variantId ? "variant" : "product")
-                  )
-                  .map((field) => (
-                    <div
-                      key={field.key}
-                      className="grid gap-1 px-6 py-3 sm:grid-cols-2"
-                    >
-                      <dt className="text-sm text-ui-fg-subtle">
-                        {field.label}
-                        {field.required && " *"}
-                      </dt>
-                      <dd className="break-words text-sm text-ui-fg-base">
-                        {formatAttributeValue(field, values[field.key])}
-                      </dd>
-                    </div>
-                  ))}
-              </dl>
+              {attributeSections(
+                group.fields.filter(
+                  (field) => field.scope === (variantId ? "variant" : "product")
+                )
+              ).map((section) => (
+                <div key={section.name || ""}>
+                  {section.name && (
+                    <h4 className="px-6 py-2 text-sm font-medium text-ui-fg-base">
+                      {section.name}
+                    </h4>
+                  )}
+                  <dl>
+                    {section.fields.map((field) => (
+                      <div
+                        key={field.key}
+                        className="grid gap-1 px-6 py-3 sm:grid-cols-2"
+                      >
+                        <dt className="text-sm text-ui-fg-subtle">
+                          {field.label}
+                          {field.required && " *"}
+                        </dt>
+                        <dd className="break-words text-sm text-ui-fg-base">
+                          {formatAttributeValue(field, values[field.key])}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
             </section>
           ))}
         </div>

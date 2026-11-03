@@ -276,3 +276,11 @@ it("selects only explicitly applicable fields and rejects invalid selections", (
     ).toThrow("unique fields")
   expect(template.fields).toHaveLength(2)
 })
+
+it("validates a single optional subsection without changing field identity", () => {
+  expect(
+    fieldSchema.parse({ ...field, subsection: " Cameras " })
+  ).toMatchObject({ key: field.key, subsection: "Cameras" })
+  for (const subsection of ["", "  ", "x".repeat(101), ["nested"]])
+    expect(fieldSchema.safeParse({ ...field, subsection }).success).toBe(false)
+})

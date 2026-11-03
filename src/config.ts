@@ -15,6 +15,7 @@ export const fieldSchema = z
     key,
     label: text,
     help: z.string().trim().max(500).optional(),
+    subsection: z.string().trim().min(1).max(100).optional(),
     type: z.enum([
       "text",
       "number",

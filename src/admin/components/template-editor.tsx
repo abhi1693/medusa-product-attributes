@@ -384,6 +384,21 @@ export const TemplateEditor = ({
                       />
                     </div>
                     <div className="flex flex-col gap-2">
+                      <Label htmlFor={`field-${index}-subsection`}>
+                        Subsection (optional)
+                      </Label>
+                      <Input
+                        id={`field-${index}-subsection`}
+                        maxLength={100}
+                        value={field.subsection || ""}
+                        onChange={(event) =>
+                          fieldChange(index, {
+                            subsection: event.target.value || undefined,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
                       <Label htmlFor={`field-${index}-key`}>Field key</Label>
                       <Input
                         id={`field-${index}-key`}

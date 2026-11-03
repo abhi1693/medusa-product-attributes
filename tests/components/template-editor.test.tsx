@@ -107,6 +107,8 @@ test("template schema editor configures typed fields, choices, flags and orderin
   await user.type(screen.getByLabelText(/Description/), "Device attributes")
   await user.type(screen.getByLabelText("Label", { exact: true }), "Ports")
   await user.type(screen.getByLabelText("Field key"), "ports")
+  await user.type(screen.getByLabelText("Subsection (optional)"), "Hardware")
+  await user.clear(screen.getByLabelText("Subsection (optional)"))
   await select("Type", "Number")
   await user.type(screen.getByLabelText("Unit"), "ports")
   fireEvent.change(screen.getByLabelText("Minimum"), { target: { value: "0" } })
@@ -132,6 +134,7 @@ test("template schema editor configures typed fields, choices, flags and orderin
     "Supported features"
   )
   await user.type(screen.getByLabelText("Field key"), "features")
+  await user.type(screen.getByLabelText("Subsection (optional)"), "Features")
   await select("Type", "Single choice")
   await user.click(screen.getByRole("button", { name: "Add choice" }))
   await user.click(screen.getByRole("button", { name: "Add choice" }))
@@ -160,6 +163,7 @@ test("template schema editor configures typed fields, choices, flags and orderin
     fields: [
       {
         key: "features",
+        subsection: "Features",
         type: "multi_select",
         options: [{ label: "PoE", value: "poe" }],
       },

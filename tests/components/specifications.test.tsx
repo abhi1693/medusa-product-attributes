@@ -680,3 +680,52 @@ test("loading template definitions can fail and recover without losing current p
   await screen.findByRole("combobox", { name: "Applicable fields · Switch" })
   expect(mocks.template).toHaveBeenCalledTimes(2)
 })
+
+test("one-level subsections display and edit independently typed leaf fields", async () => {
+  const user = userEvent.setup()
+  const cameraFields = [
+    {
+      ...view.groups[0].fields[0],
+      key: "cameras_hd",
+      label: "HD",
+      subsection: "Managed cameras",
+      unit: undefined,
+    },
+    {
+      ...view.groups[0].fields[0],
+      key: "cameras_4k",
+      label: "4K",
+      subsection: "Managed cameras",
+      unit: undefined,
+    },
+  ]
+  mocks.product.mockResolvedValue({
+    ...view,
+    groups: [{ ...view.groups[0], fields: cameraFields }],
+    values: { cameras_hd: 24, cameras_4k: 8 },
+  })
+  mount()
+  const region = await screen.findByRole("region", {
+    name: "Product attributes",
+  })
+  expect(
+    within(region).getAllByRole("heading", { name: "Managed cameras" })
+  ).toHaveLength(1)
+  await user.click(within(region).getByRole("button", { name: "Edit" }))
+  const drawer = await screen.findByRole("dialog")
+  expect(
+    within(drawer).getAllByRole("heading", { name: "Managed cameras" })
+  ).toHaveLength(1)
+  expect(within(drawer).getByLabelText("HD")).toHaveValue(24)
+  expect(within(drawer).getByLabelText("4K")).toHaveValue(8)
+  fireEvent.change(within(drawer).getByLabelText("HD"), {
+    target: { value: "12" },
+  })
+  await user.click(within(drawer).getByRole("button", { name: "Save" }))
+  await waitFor(() =>
+    expect(mocks.saveValues).toHaveBeenCalledWith("product", {
+      version: view.version,
+      values: { cameras_hd: 12, cameras_4k: 8 },
+    })
+  )
+})
