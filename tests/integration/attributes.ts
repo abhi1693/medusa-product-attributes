@@ -1,3 +1,5 @@
+import { createRequire } from "node:module"
+import path from "node:path"
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import type {
@@ -5,7 +7,7 @@ import type {
   IProductModuleService,
   MedusaContainer,
 } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, ModulesSdkUtils } from "@medusajs/framework/utils"
 import {
   createStep,
   createWorkflow,
@@ -61,6 +63,36 @@ export default async function integration({ container }: ExecArgs) {
       /^\/attributes_plugin_[a-f0-9]{16}_test$/.test(database.pathname),
     "Integration checks require a disposable local CI database"
   )
+  // Exercise the packed forward migration against the previous table shape in
+  // a separate schema; native commerce tables and the real module stay untouched.
+  const connection = ModulesSdkUtils.createPgConnection({ clientUrl: database.href, pool: { min: 0, max: 1 } })
+  try {
+    await connection.transaction(async transaction => {
+      await transaction.raw('create schema group_upgrade_probe')
+      await transaction.raw('set local search_path to group_upgrade_probe')
+      await transaction.raw('create table product_specification (id text primary key, template_id text not null, template_version integer not null)')
+      await transaction.raw('create table product_specification_revision (id text primary key, template_id text not null, template_version integer not null, "values" jsonb not null)')
+      await transaction.raw("insert into product_specification values ('spec', 'group', 3)")
+      await transaction.raw('insert into product_specification_revision values (?, ?, ?, ?::jsonb)', ['revision', 'group', 3, JSON.stringify({ ports: 8 })])
+      const require = createRequire(path.join(process.cwd(), "package.json"))
+      const root = path.dirname(require.resolve("@abhi1693/medusa-product-attributes/package.json"))
+      const { Migration20261103124500 } = require(path.join(root, ".medusa/server/src/modules/product-attributes/migrations/Migration20261103124500.js"))
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const migration = new Migration20261103124500(undefined, undefined)
+        await migration.up()
+        for (const sql of migration.getQueries()) await transaction.raw(sql)
+      }
+      const [row] = await transaction('product_specification_revision').select('*')
+      assert.deepEqual(row.groups, [{ template_id: "group", template_version: 3 }])
+      assert.deepEqual(row.values, { ports: 8 })
+      assert.equal(Object.hasOwn(row, "template_id"), false)
+      assert.deepEqual(await transaction('product_specification').select('*'), [{ id: "spec" }])
+      await transaction.raw('drop schema group_upgrade_probe cascade')
+    })
+  } finally {
+    await connection.destroy()
+  }
+  console.info("Forward group schema migration preserves existing values and is safe on a second application")
   const service = container.resolve<Service>(PRODUCT_ATTRIBUTES)
   const products = container.resolve<IProductModuleService>(Modules.PRODUCT)
   const query = container.resolve(ContainerRegistrationKeys.QUERY)

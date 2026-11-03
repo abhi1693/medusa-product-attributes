@@ -122,7 +122,7 @@ await client.saveValues(productId, {
 
 The Admin endpoint is `POST /admin/product-attributes/products/:id/groups`. Membership is a complete ordered list, limited to 30 groups. Repeated group IDs and duplicate field keys across groups are rejected. Each fact has one owning definition; do not create editable copies of native fields. Removing a group removes its fields from the current snapshot, preserving immutable history and unrelated values.
 
-The normalized product and Store responses expose `groups`, typed product `values` and current native `variants`. No serialized vendor sections or raw audit graph is exposed. The previous singular assignment endpoint/shape is removed. This undeployed schema targets a fresh database; no migration, reset or data conversion is run against an existing application's database automatically.
+The normalized product and Store responses expose `groups`, typed product `values` and current native `variants`. No serialized vendor sections or raw audit graph is exposed. The previous singular assignment endpoint/shape is removed. The schema migration can carry an earlier single assignment into a one-group snapshot without changing its values. It never resets product data. Application-specific cleanup/backfill is a separate explicit operation.
 
 ## Data and authorization boundaries
 

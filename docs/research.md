@@ -45,4 +45,4 @@ Physical/customs fields exist independently on native Product and Variant. Varia
 
 A product's immutable specification revision now pins multiple reusable definition revisions. Existing module transactions, concurrency checks, public Product/Variant links and normalized authorized Store reads remain. Duplicate group IDs or field keys are rejected at workflow and owning service boundaries. Groups are the existing reusable template concept, not another entity layer. Variant fields retain explicit scope without inheritance. Actual facets/indexing remain separate.
 
-The initial undeployed schema is rewritten for fresh databases. No compatibility reader, live/shared database reset, automatic seed or deployment is part of this change.
+The initial schema uses group composition. A forward schema migration converts an existing single assignment into a one-group snapshot and removes obsolete columns, preserving values and current pointers. This is a schema migration, not a compatibility reader or automatic catalog cleanup. Application-specific repairs remain explicit operations; no database reset or deployment is bundled.
