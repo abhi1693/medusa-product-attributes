@@ -38,7 +38,7 @@ const ProductAttributesPage = () => {
     <Container className="divide-y p-0">
       <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-4">
         <div>
-          <Heading level="h1">Specification groups</Heading>
+          <Heading level="h1">Product specification templates</Heading>
           <Text size="small" className="mt-1 text-ui-fg-subtle">
             Reusable specifications for products and variants.
           </Text>
@@ -48,7 +48,7 @@ const ProductAttributesPage = () => {
           onClick={() => setCreating(true)}
           disabled={!query.data?.can_write}
         >
-          Create group
+          Create template
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-3 px-6 py-3">
@@ -186,7 +186,7 @@ const ProductAttributesPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Specification groups",
+  label: "Product specification templates",
   icon: SquaresPlus,
 })
 export default ProductAttributesPage

@@ -36,6 +36,7 @@ test("public client preserves supplied transport and encodes entity identifiers"
   await client.createTemplate(template)
   await client.reviseTemplate("template/type", { ...template, version: 1 })
   await client.archiveTemplate("template/type", 2)
+  await client.deleteTemplate("template/type", 2)
   await client.product("product/type")
   await client.storeProduct("product/type")
   await client.assignGroups("product/type", assignment)
@@ -65,6 +66,10 @@ test("public client preserves supplied transport and encodes entity identifiers"
     [
       "/admin/product-attributes/templates/template%2Ftype/archive",
       { method: "POST", body: { version: 2 } },
+    ],
+    [
+      "/admin/product-attributes/templates/template%2Ftype",
+      { method: "DELETE", body: { version: 2 } },
     ],
     ["/admin/product-attributes/products/product%2Ftype"],
     ["/store/products/product%2Ftype/attributes"],

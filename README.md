@@ -137,3 +137,11 @@ Specification revisions and their current pointers commit within one owning modu
 ## License
 
 MIT © Abhimanyu Saharan.
+
+### Applicable fields and editable seeds
+
+A product can reuse multiple specification templates and explicitly select the fields that apply from each one. An omitted `field_keys` selection includes all fields; an explicit selection must contain unique keys from the pinned revision. Admin editing, validation and Store responses all use that same selection. Changing one template selection preserves facts owned by the other assignments.
+
+Use `service.seedDefinitions(definitions, actorId)` for editable database definitions. It creates missing Admin templates once and preserves existing edits, archives and deletion tombstones on replay. Configuration synchronization remains an explicit separate capability for applications that intentionally require code-managed definitions.
+
+Settings → Product specification templates supports deletion of unused Admin templates. Remove current product assignments first, or archive a template to preserve them. Deletion retains immutable history; pinned historical revisions remain readable for compensation and audit. All writes retain the existing authorization and stale-version checks.

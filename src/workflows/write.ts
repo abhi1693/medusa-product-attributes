@@ -28,7 +28,7 @@ import type {
   SpecificationWriteInput,
   SpecificationWriteReceipt,
 } from "../types"
-import { mergeValues } from "../validation"
+import { applicableTemplate, mergeValues } from "../validation"
 import {
   productIssues,
   productState,
@@ -61,7 +61,7 @@ export async function prepareAttributesMutation(
   if (!input.assignment && !specification)
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Assign specification groups before editing values"
+      "Assign specification templates before editing values"
     )
   const assignments = input.assignment
     ? input.assignment.groups
@@ -78,7 +78,9 @@ export async function prepareAttributesMutation(
   const groups = input.assignment
     ? await Promise.all(
         assignments.map((group) =>
-          service.revision(group.template_id, group.template_version)
+          service
+            .revision(group.template_id, group.template_version)
+            .then((template) => applicableTemplate(template, group))
         )
       )
     : previous
@@ -257,7 +259,9 @@ export async function confirmSpecification(
     container.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
   const groups = await Promise.all(
     input.groups.map((group) =>
-      service.revision(group.template_id, group.template_version)
+      service
+        .revision(group.template_id, group.template_version)
+        .then((template) => applicableTemplate(template, group))
     )
   )
   const issues = productIssues(
@@ -322,7 +326,7 @@ export async function exportProductAttributesMetadata(
   if (!state.specification)
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Assign specification groups before exporting specifications"
+      "Assign specification templates before exporting specifications"
     )
   if (specificationVersion(state.specification) !== version) conflict()
   const source = state.specification

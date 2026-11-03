@@ -6,7 +6,12 @@ import {
   resolveOptions,
   templateSchema,
 } from "../../src/config"
-import { isRecord, mergeValues, validateValues } from "../../src/validation"
+import {
+  applicableTemplate,
+  isRecord,
+  mergeValues,
+  validateValues,
+} from "../../src/validation"
 import type { AttributeField, TemplateDefinition } from "../../src/types"
 
 export const field: AttributeField = {
@@ -239,4 +244,35 @@ describe("scoped typed values", () => {
       validateValues(fields, { enabled: true, power: 100 }, "product")
     ).toEqual([])
   })
+})
+
+it("selects only explicitly applicable fields and rejects invalid selections", () => {
+  const template = {
+    ...definition,
+    id: "template",
+    version: 1,
+    source: "admin" as const,
+    archived: false,
+    description: "",
+    category_ids: [],
+    fields: [field, { ...field, key: "other" }],
+  }
+  const assignment = { template_id: template.id, template_version: 1 }
+  expect(applicableTemplate(template, assignment)).toBe(template)
+  const selected = applicableTemplate(template, {
+    ...assignment,
+    field_keys: ["model"],
+  })
+  expect(selected.fields).toEqual([field])
+  expect(selected).toMatchObject({ field_keys: ["model"] })
+  for (const field_keys of [
+    [],
+    ["missing"],
+    ["model", "model"],
+    Array(101).fill("model"),
+  ])
+    expect(() =>
+      applicableTemplate(template, { ...assignment, field_keys })
+    ).toThrow("unique fields")
+  expect(template.fields).toHaveLength(2)
 })

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createTemplate: vi.fn(),
   reviseTemplate: vi.fn(),
   archiveTemplate: vi.fn(),
+  deleteTemplate: vi.fn(),
   prompt: vi.fn(),
 }))
 vi.mock("../../src/admin/lib/api", () => ({
@@ -177,7 +178,7 @@ test("template list searches, paginates, includes archived records and creates s
       include_archived: true,
     })
   )
-  await user.click(screen.getByRole("button", { name: "Create group" }))
+  await user.click(screen.getByRole("button", { name: "Create template" }))
   await user.click(screen.getByRole("button", { name: "Submit editor" }))
   await waitFor(() =>
     expect(mocks.createTemplate).toHaveBeenCalledWith({
@@ -186,7 +187,7 @@ test("template list searches, paginates, includes archived records and creates s
       fields: [],
     })
   )
-  expect(config.label).toBe("Specification groups")
+  expect(config.label).toBe("Product specification templates")
 })
 
 test("list distinguishes first-use emptiness, filtered emptiness and read-only access", async () => {
@@ -197,7 +198,7 @@ test("list distinguishes first-use emptiness, filtered emptiness and read-only a
   })
   const { unmount } = mount()
   expect(await screen.findByText("No templates yet")).toBeInTheDocument()
-  expect(screen.getByRole("button", { name: "Create group" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Create template" })).toBeDisabled()
   expect(screen.getByText(/Read-only access/)).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText("Search templates"), {
     target: { value: "missing" },
@@ -329,4 +330,27 @@ test("template and field totals use neutral count labels for a single result", a
   })
   mount(true)
   expect(await screen.findByText("Version 2 · Fields: 1")).toBeInTheDocument()
+})
+
+test("deletion is confirmed, reports assigned-template rejection and returns to the list on success", async () => {
+  const user = userEvent.setup()
+  mocks.deleteTemplate
+    .mockRejectedValueOnce(new Error("Remove assigned products first"))
+    .mockResolvedValueOnce({ id: "template", deleted: true })
+  mount(true)
+  await screen.findByRole("heading", { name: "Network switch" })
+  mocks.prompt.mockResolvedValueOnce(false)
+  await user.click(screen.getByRole("button", { name: "Delete" }))
+  expect(mocks.deleteTemplate).not.toHaveBeenCalled()
+  await user.click(screen.getByRole("button", { name: "Delete" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Remove assigned products first"
+  )
+  await user.click(screen.getByRole("button", { name: "Delete" }))
+  expect(
+    await screen.findByRole("heading", {
+      name: "Product specification templates",
+    })
+  ).toBeInTheDocument()
+  expect(mocks.deleteTemplate).toHaveBeenCalledWith("template", 2)
 })

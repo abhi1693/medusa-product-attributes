@@ -280,7 +280,7 @@ describe("owned immutable write orchestration", () => {
         { product_id: h.product.id, values: { version: "unassigned" } },
         h
       )
-    ).rejects.toThrow("Assign specification groups")
+    ).rejects.toThrow("Assign specification templates")
     h.service.revision.mockResolvedValue({ ...template, archived: true })
     await expect(
       prepareAttributesMutation(
@@ -447,11 +447,11 @@ describe("owned immutable write orchestration", () => {
         missing.product.id,
         "unassigned"
       )
-    ).rejects.toThrow("Assign specification groups")
+    ).rejects.toThrow("Assign specification templates")
     h.service.specification.mockResolvedValue(null)
     await expect(
       exportProductAttributesMetadata(h.container, h.product.id, version)
-    ).rejects.toThrow("Assign specification groups")
+    ).rejects.toThrow("Assign specification templates")
   })
 })
 

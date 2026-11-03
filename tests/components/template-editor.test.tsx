@@ -151,7 +151,7 @@ test("template schema editor configures typed fields, choices, flags and orderin
   )
   await user.click(screen.getByRole("option", { name: "Networking" }))
   await user.click(screen.getByLabelText("Name"))
-  await user.click(screen.getByRole("button", { name: "Create group" }))
+  await user.click(screen.getByRole("button", { name: "Create template" }))
   await waitFor(() => expect(save).toHaveBeenCalledOnce())
   expect(save.mock.calls[0][0]).toMatchObject({
     key: "switch",
@@ -204,7 +204,7 @@ test("empty schema, cancellation, discard confirmation and stale save failures p
   expect(
     screen.getByText("Add a field to define this template.")
   ).toBeInTheDocument()
-  expect(screen.getByRole("button", { name: "Create group" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Create template" })).toBeDisabled()
   unmount()
 })
 

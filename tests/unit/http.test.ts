@@ -15,6 +15,7 @@ import middleware from "../../src/api/middlewares"
 import { templateAssignments } from "../../src/api/template-assignments"
 import {
   archiveTemplate,
+  deleteTemplate,
   assignProductGroups,
   checkProduct,
   exportProductMetadata,
@@ -77,6 +78,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     history: vi.fn().mockResolvedValue([revision]),
     save: vi.fn().mockResolvedValue(revision),
     archive: vi.fn().mockResolvedValue({ ...revision, archived: true }),
+    remove: vi.fn().mockResolvedValue({ id: revision.id, deleted: true }),
     assignments: vi.fn().mockResolvedValue([[], 0]),
   }
   const products = {
@@ -1025,4 +1027,23 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
     "/admin/product-variants/variant_24",
   ])
     expect(matcher.test(path)).toBe(false)
+})
+
+test("template DELETE authorizes first, requires a version and delegates safe deletion", async () => {
+  const h = fixture({ params: { id: revision.id }, body: { version: 2 } })
+  await deleteTemplate(h.request, h.response)
+  expect(h.service.remove).toHaveBeenCalledWith(revision.id, 2)
+  expect(h.response.json).toHaveBeenCalledWith({
+    id: revision.id,
+    deleted: true,
+  })
+  h.request.body = { force: true }
+  await expect(deleteTemplate(h.request, h.response)).rejects.toMatchObject({
+    type: MedusaError.Types.INVALID_DATA,
+  })
+  h.service.configuration.authorize = vi.fn().mockResolvedValue(false)
+  await expect(deleteTemplate(h.request, h.response)).rejects.toMatchObject({
+    type: MedusaError.Types.FORBIDDEN,
+  })
+  expect(h.service.remove).toHaveBeenCalledTimes(1)
 })

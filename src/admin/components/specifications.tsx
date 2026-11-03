@@ -11,7 +11,11 @@ import {
 } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
-import type { AttributeValues, ProductAttributes } from "../../types"
+import type {
+  AttributeValues,
+  ProductAttributes,
+  TemplateRevision,
+} from "../../types"
 import { attributesApi, attributesKeys } from "../lib/api"
 import { restoreFocus } from "../lib/focus"
 import { AttributeInput, formatAttributeValue } from "./attribute-input"
@@ -241,6 +245,12 @@ export const Specifications = ({
   const [selectedGroups, setSelectedGroups] = useState<string[]>([])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
+  const [assignmentDefinitions, setAssignmentDefinitions] = useState<
+    TemplateRevision[]
+  >([])
+  const [selectedFields, setSelectedFields] = useState<
+    Record<string, string[]>
+  >({})
   const query = useQuery({
     queryKey: attributesKeys.product(productId),
     queryFn: () => attributesApi.product(productId),
@@ -284,12 +294,18 @@ export const Specifications = ({
   const values = variant ? variant.values : view.values
   const assignment = async () => {
     if (
-      view.groups.some((group) => !selectedGroups.includes(group.id)) &&
+      view.groups.some(
+        (group) =>
+          !selectedGroups.includes(group.id) ||
+          group.fields.some(
+            (field) => !selectedFields[group.id]?.includes(field.key)
+          )
+      ) &&
       !(await prompt({
-        title: "Remove specification groups?",
+        title: "Remove specification templates?",
         description:
           "Values in removed groups will leave the current specification. Previous revisions remain recorded.",
-        confirmText: "Save groups",
+        confirmText: "Save templates",
         cancelText: "Cancel",
       }))
     )
@@ -304,12 +320,53 @@ export const Specifications = ({
             const existing = view.groups.find((group) => group.id === id)
             const group =
               existing || view.templates.find((group) => group.id === id)!
-            return { template_id: group.id, template_version: group.version }
+            return {
+              template_id: group.id,
+              template_version: group.version,
+              field_keys: selectedFields[group.id],
+            }
           }),
         })
       )
       setSelecting(false)
-      toast.success("Specification groups saved")
+      toast.success("Product specification templates saved")
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setPending(false)
+    }
+  }
+  const chooseGroups = async (ids: string[]) => {
+    setPending(true)
+    setError(undefined)
+    try {
+      const definitions = await Promise.all(
+        ids.map(async (id) => {
+          const cached = assignmentDefinitions.find((item) => item.id === id)
+          if (cached) return cached
+          const assigned = view.groups.find((item) => item.id === id)
+          const response = await attributesApi.template(id)
+          return assigned
+            ? response.revisions.find(
+                (item) => item.version === assigned.version
+              )!
+            : response.template
+        })
+      )
+      setAssignmentDefinitions(definitions)
+      setSelectedFields((current) =>
+        Object.fromEntries(
+          definitions.map((template) => [
+            template.id,
+            current[template.id] ||
+              view.groups.find((group) => group.id === template.id)
+                ?.field_keys ||
+              template.fields.map((field) => field.key),
+          ])
+        )
+      )
+      setSelectedGroups(ids)
+      setSelecting(true)
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {
@@ -328,7 +385,7 @@ export const Specifications = ({
             {variantId ? "Variant specifications" : "Specifications"}
           </Heading>
           <Text size="small" className="mt-1 text-ui-fg-subtle">
-            {view.groups.length} specification groups
+            {view.groups.length} specification templates
           </Text>
         </div>
         {view.groups.length > 0 && (
@@ -357,9 +414,9 @@ export const Specifications = ({
         </div>
       )}
       {view.groups.length === 0 ? (
-        <Feedback title="No specification groups">
+        <Feedback title="No specification templates">
           {variantId
-            ? "Add specification groups on the product to define variant fields."
+            ? "Add specification templates on the product to define variant fields."
             : "Add reusable groups to enter technical specifications for this product."}
         </Feedback>
       ) : fields.length === 0 ? (
@@ -422,11 +479,11 @@ export const Specifications = ({
             variant="transparent"
             className="w-fit"
             onClick={() => {
-              setSelectedGroups(view.groups.map((group) => group.id))
-              setSelecting(!selecting)
+              if (selecting) setSelecting(false)
+              else void chooseGroups(view.groups.map((group) => group.id))
             }}
           >
-            Manage specification groups
+            Manage specification templates
           </Button>
           {selecting && (
             <div className="flex flex-col gap-3">
@@ -436,7 +493,7 @@ export const Specifications = ({
                 </Text>
               )}
               <Combobox
-                aria-label="Specification groups"
+                aria-label="Product specification templates"
                 options={[
                   ...view.templates,
                   ...view.groups.filter(
@@ -448,24 +505,53 @@ export const Specifications = ({
                   value: template.id,
                 }))}
                 value={selectedGroups}
-                onChange={(value) => setSelectedGroups(value as string[])}
-                placeholder="Choose groups"
+                onChange={(value) => {
+                  void chooseGroups(value as string[])
+                }}
+                placeholder="Choose templates"
               />
+              {assignmentDefinitions
+                .filter((template) => selectedGroups.includes(template.id))
+                .map((template) => (
+                  <label
+                    key={template.id}
+                    className="flex flex-col gap-2 text-sm"
+                  >
+                    Applicable fields · {template.name}
+                    <Combobox
+                      aria-label={`Applicable fields · ${template.name}`}
+                      options={template.fields.map((field) => ({
+                        label: field.label,
+                        value: field.key,
+                      }))}
+                      value={selectedFields[template.id]}
+                      onChange={(value) =>
+                        setSelectedFields((current) => ({
+                          ...current,
+                          [template.id]: value as string[],
+                        }))
+                      }
+                    />
+                  </label>
+                ))}
               <Button
                 size="small"
                 className="w-fit"
-                disabled={pending}
+                disabled={
+                  pending ||
+                  selectedGroups.some((id) => !selectedFields[id].length)
+                }
                 isLoading={pending}
                 onClick={() => {
                   void assignment()
                 }}
               >
-                Save groups
+                Save templates
               </Button>
               {view.templates.length === 0 && (
                 <Text size="small" className="text-ui-fg-subtle">
                   No active groups are available. Create one in Settings →
-                  Specification groups.
+                  Product specification templates.
                 </Text>
               )}
             </div>

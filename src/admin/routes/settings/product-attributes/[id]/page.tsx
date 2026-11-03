@@ -11,7 +11,7 @@ import {
 } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useNavigate } from "react-router-dom"
 import { attributesApi, attributesKeys } from "../../../../lib/api"
 import { errorMessage, Feedback } from "../../../../components/feedback"
 import { TemplateEditor } from "../../../../components/template-editor"
@@ -20,6 +20,7 @@ import { TemplateProducts } from "../../../../components/template-products"
 const TemplateDetailPage = () => {
   const { id = "" } = useParams()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const prompt = usePrompt()
   const [editing, setEditing] = useState<"edit" | "duplicate">()
   const [pending, setPending] = useState(false)
@@ -54,7 +55,7 @@ const TemplateDetailPage = () => {
   }
   const archive = async () => {
     const confirmed = await prompt({
-      title: "Archive group?",
+      title: "Archive template?",
       description:
         "Existing assignments keep their version and values. This template will no longer be available for new assignments.",
       confirmText: "Archive",
@@ -73,6 +74,30 @@ const TemplateDetailPage = () => {
       setPending(false)
     }
   }
+  const remove = async () => {
+    if (
+      !(await prompt({
+        title: "Delete template?",
+        description:
+          "Remove this template from assigned products first. Previous specification history is retained.",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      }))
+    )
+      return
+    setPending(true)
+    setError(undefined)
+    try {
+      await attributesApi.deleteTemplate(id, template.version)
+      await refresh()
+      toast.success("Template deleted")
+      navigate("..", { relative: "path" })
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setPending(false)
+    }
+  }
   return (
     <div className="flex flex-col gap-4">
       <Link
@@ -80,7 +105,7 @@ const TemplateDetailPage = () => {
         className="flex w-fit items-center gap-2 text-sm text-ui-fg-subtle hover:text-ui-fg-base"
       >
         <ArrowLeft />
-        Specification groups
+        Product specification templates
       </Link>
       <Container className="divide-y p-0">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-4">
@@ -114,6 +139,18 @@ const TemplateDetailPage = () => {
               isLoading={pending}
             >
               Archive
+            </Button>
+            <Button
+              size="small"
+              variant="danger"
+              disabled={
+                !can_write || template.source === "configuration" || pending
+              }
+              onClick={() => {
+                void remove()
+              }}
+            >
+              Delete
             </Button>
             <Button
               size="small"

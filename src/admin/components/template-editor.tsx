@@ -187,7 +187,9 @@ export const TemplateEditor = ({
       >
         <FocusModal.Header>
           <FocusModal.Title>
-            {template && !duplicate ? "Create group version" : "Create group"}
+            {template && !duplicate
+              ? "Create template version"
+              : "Create template"}
           </FocusModal.Title>
           <FocusModal.Description className="sr-only">
             Define reusable product and variant specifications.
@@ -611,7 +613,7 @@ export const TemplateEditor = ({
                 isLoading={pending}
                 disabled={draft.fields.length === 0 || stale}
               >
-                {template && !duplicate ? "Create version" : "Create group"}
+                {template && !duplicate ? "Create version" : "Create template"}
               </Button>
             </div>
           </FocusModal.Footer>

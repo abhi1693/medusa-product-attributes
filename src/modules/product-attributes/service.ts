@@ -29,7 +29,7 @@ import ProductAttributeRevision from "./models/revision"
 import ProductSpecification from "./models/specification"
 import ProductSpecificationRevision from "./models/specification-revision"
 import ProductSpecificationVariant from "./models/specification-variant"
-import { validateValues } from "../../validation"
+import { applicableTemplate, validateValues } from "../../validation"
 
 export const conflict = (): never => {
   throw new MedusaError(
@@ -92,7 +92,9 @@ export default class ProductAttributesService extends MedusaService({
       invalid("Choose each specification group only once (maximum 30)")
     const groups = await Promise.all(
       input.groups.map((group) =>
-        this.revision(group.template_id, group.template_version, context)
+        this.revision(group.template_id, group.template_version, context).then(
+          (template) => applicableTemplate(template, group)
+        )
       )
     )
     for (const group of groups)
@@ -329,8 +331,8 @@ export default class ProductAttributesService extends MedusaService({
     const [record] = await manager.execute<
       Array<TemplateSummary & { definition: TemplateDefinition }>
     >(
-      "select t.id,t.key,t.source,t.archived,r.version,r.definition from product_attribute_template t join product_attribute_revision r on r.template_id=t.id and r.version=coalesce(?,t.version) where t.id=? and t.deleted_at is null",
-      [version ?? null, id]
+      "select t.id,t.key,t.source,t.archived,r.version,r.definition from product_attribute_template t join product_attribute_revision r on r.template_id=t.id and r.version=coalesce(?,t.version) where t.id=? and (t.deleted_at is null or ? is not null)",
+      [version ?? null, id, version ?? null]
     )
     if (!record)
       throw new MedusaError(
@@ -424,9 +426,60 @@ export default class ProductAttributesService extends MedusaService({
     return this.revision(id, undefined, context)
   }
 
+  /** Delete unused templates while retaining immutable history for previous revisions. */
+  @InjectTransactionManager()
+  async remove(
+    id: string,
+    version: number,
+    @MedusaContext() context?: Context<EntityManager>
+  ) {
+    const manager = context!.transactionManager!
+    await manager.execute("select pg_advisory_xact_lock(903241011)")
+    const template = await this.revision(id, undefined, context)
+    if (template.source !== "admin")
+      invalid("Configured templates are managed in application configuration")
+    if (template.version !== version) conflict()
+    const assigned = await manager.execute<Array<{ id: string }>>(
+      "select s.id from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.deleted_at is null and exists (select 1 from jsonb_array_elements(r.groups) g where g->>'template_id'=?) limit 1",
+      [id]
+    )
+    if (assigned.length)
+      invalid(
+        "Remove this template from its assigned products before deleting it. Archive it to keep current assignments."
+      )
+    await manager.execute(
+      "update product_attribute_template set archived=true,deleted_at=now(),updated_at=now() where id=?",
+      [id]
+    )
+    return { id, deleted: true as const }
+  }
+
   @InjectTransactionManager()
   async synchronize(@MedusaContext() context?: Context<EntityManager>) {
     return this.synchronizeDefinitions(this.configuration.templates, context)
+  }
+
+  /** Seed editable definitions once. Existing edits, archives and deletion tombstones win. */
+  @InjectTransactionManager()
+  async seedDefinitions(
+    definitions: readonly TemplateDefinition[],
+    actorId = "system:seed",
+    @MedusaContext() context?: Context<EntityManager>
+  ) {
+    const validated = resolveOptions({ templates: [...definitions] }).templates
+    const manager = context!.transactionManager!
+    await manager.execute("select pg_advisory_xact_lock(903241011)")
+    let created = 0
+    for (const definition of validated) {
+      const existing = await manager.execute(
+        "select id from product_attribute_template where key=?",
+        [definition.key]
+      )
+      if (existing.length) continue
+      await this.save(definition, actorId, undefined, undefined, context)
+      created++
+    }
+    return { created, skipped: validated.length - created }
   }
 
   @InjectTransactionManager()

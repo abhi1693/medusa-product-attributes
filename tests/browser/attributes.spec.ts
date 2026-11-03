@@ -76,9 +76,14 @@ test("create and revise a template through native Admin controls", async ({
   await login(page)
   await page.goto(route)
   await expect(
-    page.getByRole("heading", { name: "Specification groups", exact: true })
+    page.getByRole("heading", {
+      name: "Product specification templates",
+      exact: true,
+    })
   ).toBeVisible()
-  await page.getByRole("button", { name: "Create group", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Create template", exact: true })
+    .click()
   const dialog = page.getByRole("dialog")
   await dialog.getByLabel("Name", { exact: true }).fill("Device specifications")
   await dialog.getByLabel("Key", { exact: true }).fill("device_specifications")
@@ -120,7 +125,7 @@ test("create and revise a template through native Admin controls", async ({
     fullPage: true,
   })
   await dialog
-    .getByRole("button", { name: "Create group", exact: true })
+    .getByRole("button", { name: "Create template", exact: true })
     .click()
   await expect(dialog).toHaveCount(0)
   await page.getByRole("link", { name: /Device specifications/ }).click()
@@ -414,10 +419,13 @@ test("reader sees templates but cannot change them through the UI or API", async
   await login(page, "reader")
   await page.goto(route)
   await expect(
-    page.getByRole("heading", { name: "Specification groups", exact: true })
+    page.getByRole("heading", {
+      name: "Product specification templates",
+      exact: true,
+    })
   ).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "Create group", exact: true })
+    page.getByRole("button", { name: "Create template", exact: true })
   ).toBeDisabled()
   await expect(page.getByText(/Read-only access/)).toBeVisible()
   await page.getByRole("link", { name: /Catalog specifications/ }).click()

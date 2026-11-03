@@ -12,7 +12,7 @@ import type {
   TemplateRevision,
   ValidationIssue,
 } from "../types"
-import { validateValues } from "../validation"
+import { applicableTemplate, validateValues } from "../validation"
 
 export async function productState(
   container: MedusaContainer,
@@ -26,7 +26,9 @@ export async function productState(
   const specification = await service.specification(productId)
   const groups = await Promise.all(
     (specification?.groups || []).map((group) =>
-      service.revision(group.template_id, group.template_version)
+      service
+        .revision(group.template_id, group.template_version)
+        .then((template) => applicableTemplate(template, group))
     )
   )
   return {

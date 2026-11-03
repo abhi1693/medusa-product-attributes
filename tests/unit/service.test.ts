@@ -134,7 +134,7 @@ describe("template service database and revision boundaries", () => {
     expect(await h.service.revision(revision.id, undefined, h.context)).toEqual(
       revision
     )
-    expect(h.execute.mock.calls[0][1]).toEqual([null, revision.id])
+    expect(h.execute.mock.calls[0][1]).toEqual([null, revision.id, null])
     expect(
       await h.service.revision(revision.id, 2, { manager: h.manager } as any)
     ).toEqual({
@@ -142,7 +142,7 @@ describe("template service database and revision boundaries", () => {
       description: "Hardware",
       category_ids: ["pcat_network"],
     })
-    expect(h.execute.mock.calls[1][1]).toEqual([2, revision.id])
+    expect(h.execute.mock.calls[1][1]).toEqual([2, revision.id, 2])
     await expect(
       h.service.revision("missing", 1, h.context)
     ).rejects.toMatchObject({
@@ -375,4 +375,51 @@ describe("template service database and revision boundaries", () => {
     ).rejects.toThrow("belongs to an Admin-managed template")
     expect(collision.execute).toHaveBeenCalledTimes(2)
   })
+})
+
+test("deletes only unused Admin templates with a current version, retaining history", async () => {
+  const h = harness()
+  const read = vi.spyOn(h.service, "revision").mockResolvedValue(revision)
+  expect(
+    await h.service.remove(revision.id, revision.version, h.context)
+  ).toEqual({ id: revision.id, deleted: true })
+  expect(h.execute.mock.calls[2][0]).toContain("deleted_at=now()")
+  expect(h.execute.mock.calls[2][0]).toContain("archived=true")
+  read.mockResolvedValueOnce({ ...revision, source: "configuration" })
+  await expect(
+    h.service.remove(revision.id, revision.version, h.context)
+  ).rejects.toThrow("configuration")
+  await expect(h.service.remove(revision.id, 1, h.context)).rejects.toThrow(
+    "changed"
+  )
+  h.execute
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{ id: "assigned" }])
+  await expect(
+    h.service.remove(revision.id, revision.version, h.context)
+  ).rejects.toThrow("assigned products")
+})
+
+test("seeded definitions are editable Admin records and replay preserves existing or deleted keys", async () => {
+  const h = harness({}, [], [], [{ id: "deleted-or-edited" }])
+  const save = vi.spyOn(h.service, "save").mockResolvedValue(revision)
+  expect(
+    await h.service.seedDefinitions(
+      [definition, { ...definition, key: "retained" }],
+      "user_seed",
+      h.context
+    )
+  ).toEqual({ created: 1, skipped: 1 })
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({ key: definition.key }),
+    "user_seed",
+    undefined,
+    undefined,
+    h.context
+  )
+  const empty = harness()
+  expect(
+    await empty.service.seedDefinitions([], undefined, empty.context)
+  ).toEqual({ created: 0, skipped: 0 })
 })

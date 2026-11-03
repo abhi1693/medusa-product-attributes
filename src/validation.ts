@@ -1,4 +1,11 @@
-import type { AttributeField, AttributeValues, ValidationIssue } from "./types"
+import type {
+  AttributeField,
+  AttributeValues,
+  ValidationIssue,
+  GroupAssignment,
+  TemplateRevision,
+} from "./types"
+import { MedusaError } from "@medusajs/framework/utils"
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -93,4 +100,28 @@ export function validateValues(
     }
   }
   return issues
+}
+
+/** A small explicit selection, shared by Admin, workflows and Store validation. */
+export function applicableTemplate(
+  template: TemplateRevision,
+  assignment: GroupAssignment
+) {
+  const keys = assignment.field_keys
+  if (keys === undefined) return template
+  if (
+    !keys.length ||
+    keys.length > 100 ||
+    new Set(keys).size !== keys.length ||
+    keys.some((key) => !template.fields.some((field) => field.key === key))
+  )
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Choose unique fields defined by this template (at least one)"
+    )
+  return {
+    ...template,
+    field_keys: keys,
+    fields: template.fields.filter((field) => keys.includes(field.key)),
+  }
 }

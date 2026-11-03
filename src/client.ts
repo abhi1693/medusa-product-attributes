@@ -17,7 +17,7 @@ export type AttributesTransport = {
   fetch: <T>(
     path: string,
     options?: {
-      method?: "POST"
+      method?: "POST" | "DELETE"
       body?: Record<string, unknown>
       query?: Record<string, unknown>
     }
@@ -61,6 +61,11 @@ export const createProductAttributesClient = (
     archiveTemplate: (id: string, version: number) =>
       transport.fetch<TemplateResponse>(`${templatePath(id)}/archive`, {
         method: "POST",
+        body: { version },
+      }),
+    deleteTemplate: (id: string, version: number) =>
+      transport.fetch<{ id: string; deleted: true }>(templatePath(id), {
+        method: "DELETE",
         body: { version },
       }),
     product: (id: string) =>

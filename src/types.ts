@@ -54,7 +54,7 @@ export type ProductVariantAttributes = {
 }
 export type ProductAttributes = {
   product_id: string
-  groups: TemplateRevision[]
+  groups: Array<TemplateRevision & { field_keys?: string[] }>
   assignment_version: number
   version: string
   values: AttributeValues
@@ -91,7 +91,12 @@ export type GroupAssignmentInput = {
   version: string
   groups: GroupAssignment[]
 }
-export type GroupAssignment = { template_id: string; template_version: number }
+export type GroupAssignment = {
+  template_id: string
+  template_version: number
+  /** Omitted selects every field; an explicit list selects only applicable fields. */
+  field_keys?: string[]
+}
 export type OwnedSpecification = {
   linked: boolean
   id: string

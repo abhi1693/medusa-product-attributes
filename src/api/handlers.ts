@@ -54,6 +54,11 @@ const assignmentSchema = z
           .object({
             template_id: z.string().min(1).max(100),
             template_version: z.number().int().min(1),
+            field_keys: z
+              .array(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/))
+              .min(1)
+              .max(100)
+              .optional(),
           })
           .strict()
       )
@@ -298,4 +303,20 @@ export async function storeProduct(
       return missing()
     throw error
   }
+}
+
+export async function deleteTemplate(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse
+) {
+  await authorize(req, {
+    action: "templates.write",
+    template_id: req.params.id,
+  })
+  const input = parse(revisionSchema, req.body)
+  res.json(
+    await req.scope
+      .resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
+      .remove(req.params.id, input.version)
+  )
 }
