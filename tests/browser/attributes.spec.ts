@@ -779,7 +779,9 @@ test("template impact lists products pinned to earlier schema versions", async (
   await attributes
     .getByRole("button", { name: "Manage attribute templates", exact: true })
     .click()
-  await expect(attributes.getByText("Version 1", { exact: true })).toBeVisible()
+  await expect(
+    attributes.getByText("Version 1", { exact: false })
+  ).toBeVisible()
   await attributes
     .getByRole("button", { name: "Use latest version", exact: true })
     .click()

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
-import { copyFile, mkdir, readFile, rm } from "node:fs/promises"
+import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises"
 import { createRequire } from "node:module"
 import path from "node:path"
 
@@ -67,6 +67,18 @@ try {
   await db.raw("create database ??", [name])
   created = true
   await run(["run", "db:migrate"])
+  await run(["run", "db:migrate"])
+  const migrations = path.join(
+    host,
+    "node_modules/@abhi1693/medusa-product-attributes/.medusa/server/src/modules/product-attributes/migrations"
+  )
+  const before = (await readdir(migrations)).sort()
+  await run(["exec", "--", "medusa", "db:generate", "product_attributes"])
+  assert.deepEqual(
+    (await readdir(migrations)).sort(),
+    before,
+    "Packaged migration snapshot must match the current DML schema"
+  )
   await run(["run", "build"])
   await run([
     "exec",

@@ -106,7 +106,12 @@ try {
       "Private or test files must not ship"
     )
   }
-  for (const required of ["package.json", "README.md", "LICENSE"])
+  for (const required of [
+    "package.json",
+    "README.md",
+    "LICENSE",
+    ".medusa/server/src/modules/product-attributes/migrations/.snapshot-product-attributes.json",
+  ])
     assert.ok(files.has(required), `Missing package file: ${required}`)
   const readme = await readFile(path.join(root, "README.md"), "utf8")
   const images = new Set(

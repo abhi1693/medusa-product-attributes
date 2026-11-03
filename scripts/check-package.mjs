@@ -31,3 +31,11 @@ async function inspect(directory, relative = "") {
   }
 }
 await inspect(new URL(".medusa/server/src/", root))
+
+const snapshot =
+  "src/modules/product-attributes/migrations/.snapshot-product-attributes.json"
+assert.equal(
+  await readFile(new URL(".medusa/server/" + snapshot, root), "utf8"),
+  await readFile(new URL(snapshot, root), "utf8"),
+  "Packaged migration snapshot differs from source"
+)

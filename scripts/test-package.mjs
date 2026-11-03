@@ -56,6 +56,10 @@ async function fixture(run) {
       "export const widgets = []\n"
     )
     await write(".medusa/server/src/admin/index.js", "exports.widgets = []\n")
+    const snapshot =
+      "src/modules/product-attributes/migrations/.snapshot-product-attributes.json"
+    await write(snapshot, '{"tables":[],"namespaces":[]}')
+    await write(".medusa/server/" + snapshot, '{"tables":[],"namespaces":[]}')
     const check = () =>
       execute(process.execPath, ["scripts/check-package.mjs"], { cwd: root })
     await run({ write, check, root })
@@ -103,6 +107,26 @@ test("a reused build volume cannot ship orphaned compiled code from another plug
         error.stderr,
         /Orphaned compiled source: modules\/access-control\/service\.js/
       )
+      return true
+    })
+  })
+})
+
+test("the artifact retains the exact migration snapshot required by native generation", async () => {
+  await fixture(async ({ check, write, root }) => {
+    const snapshot =
+      ".medusa/server/src/modules/product-attributes/migrations/.snapshot-product-attributes.json"
+    await write(snapshot, '{"tables":[{}]}')
+    await assert.rejects(check, (error) => {
+      assert.match(
+        error.stderr,
+        /Packaged migration snapshot differs from source/
+      )
+      return true
+    })
+    await rm(path.join(root, snapshot))
+    await assert.rejects(check, (error) => {
+      assert.match(error.stderr, /ENOENT.*snapshot-product-attributes/)
       return true
     })
   })
