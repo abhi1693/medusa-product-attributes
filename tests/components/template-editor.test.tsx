@@ -104,7 +104,7 @@ test("template schema editor configures typed fields, choices, flags and orderin
   )
   await user.type(screen.getByLabelText("Name"), "Switch")
   await user.type(screen.getByLabelText("Key"), "switch")
-  await user.type(screen.getByLabelText(/Description/), "Device specifications")
+  await user.type(screen.getByLabelText(/Description/), "Device attributes")
   await user.type(screen.getByLabelText("Label", { exact: true }), "Ports")
   await user.type(screen.getByLabelText("Field key"), "ports")
   await select("Type", "Number")

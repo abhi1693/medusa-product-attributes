@@ -38,9 +38,9 @@ const ProductAttributesPage = () => {
     <Container className="divide-y p-0">
       <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-4">
         <div>
-          <Heading level="h1">Product specification templates</Heading>
+          <Heading level="h1">Attribute templates</Heading>
           <Text size="small" className="mt-1 text-ui-fg-subtle">
-            Reusable specifications for products and variants.
+            Reusable attributes for products and variants.
           </Text>
         </div>
         <Button
@@ -186,7 +186,7 @@ const ProductAttributesPage = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Product specification templates",
+  label: "Attribute templates",
   icon: SquaresPlus,
 })
 export default ProductAttributesPage

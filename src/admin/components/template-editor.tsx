@@ -192,7 +192,7 @@ export const TemplateEditor = ({
               : "Create template"}
           </FocusModal.Title>
           <FocusModal.Description className="sr-only">
-            Define reusable product and variant specifications.
+            Define reusable product and variant attributes.
           </FocusModal.Description>
         </FocusModal.Header>
         <form

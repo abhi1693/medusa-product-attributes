@@ -134,11 +134,11 @@ beforeEach(() => {
   mocks.prompt.mockResolvedValue(true)
 })
 
-test("product specifications preserve typed values and save through a focused native drawer", async () => {
+test("product attributes preserve typed values and save through a focused native drawer", async () => {
   const user = userEvent.setup()
   mount()
   expect(
-    await screen.findByRole("region", { name: "Specifications" })
+    await screen.findByRole("region", { name: "Product attributes" })
   ).toHaveTextContent("0 ports")
   await user.click(screen.getByRole("button", { name: "Edit" }))
   const dialog = await screen.findByRole("dialog")
@@ -169,10 +169,10 @@ test("variant editor updates only the selected variant and preserves product sco
   })
   mount("variant")
   expect(
-    await screen.findByRole("region", { name: "Variant specifications" })
+    await screen.findByRole("region", { name: "Variant attributes" })
   ).toHaveTextContent("White")
   expect(
-    screen.queryByRole("button", { name: "Manage specification templates" })
+    screen.queryByRole("button", { name: "Manage attribute templates" })
   ).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "Edit" }))
   await user.clear(screen.getByLabelText("Colour"))
@@ -193,17 +193,15 @@ test("template assignment is explicit and uses an immutable version", async () =
   const user = userEvent.setup()
   mocks.product.mockResolvedValue({ ...view, groups: [], values: {} })
   mount()
-  expect(
-    await screen.findByText("No specification templates")
-  ).toBeInTheDocument()
+  expect(await screen.findByText("No attribute templates")).toBeInTheDocument()
   await user.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   expect(
     await screen.findByRole("button", { name: "Save templates" })
   ).toBeEnabled()
   await user.click(
-    screen.getByRole("combobox", { name: "Product specification templates" })
+    screen.getByRole("combobox", { name: "Attribute templates" })
   )
   await user.click(screen.getByRole("option", { name: "Switch · v2" }))
   await user.keyboard("{Escape}")
@@ -246,7 +244,7 @@ test("category recommendations come from the server and leave other templates av
   mount()
   await user.click(
     await screen.findByRole("button", {
-      name: "Manage specification templates",
+      name: "Manage attribute templates",
     })
   )
   expect(
@@ -254,7 +252,7 @@ test("category recommendations come from the server and leave other templates av
   ).toBeInTheDocument()
   expect(mocks.assignGroups).not.toHaveBeenCalled()
   await user.click(
-    screen.getByRole("combobox", { name: "Product specification templates" })
+    screen.getByRole("combobox", { name: "Attribute templates" })
   )
   expect(
     screen.getByRole("option", { name: "Switch · v2 · Recommended" })
@@ -284,11 +282,11 @@ test("removing groups requires confirmation and stale assignment errors support 
   mount()
   await user.click(
     await screen.findByRole("button", {
-      name: "Manage specification templates",
+      name: "Manage attribute templates",
     })
   )
   await user.click(
-    screen.getByRole("combobox", { name: "Product specification templates" })
+    screen.getByRole("combobox", { name: "Attribute templates" })
   )
   await user.click(screen.getByRole("option", { name: "Switch · v2" }))
   await user.keyboard("{Escape}")
@@ -390,7 +388,7 @@ test("read-only, incomplete, no-scope and unavailable-variant states are clear",
   next.unmount()
   const missing = mount("missing")
   expect(
-    await screen.findByText("Variant specifications unavailable")
+    await screen.findByText("Variant attributes unavailable")
   ).toBeInTheDocument()
   missing.unmount()
   mocks.product.mockResolvedValue({
@@ -410,18 +408,18 @@ test("unassigned variants explain product-level assignment and empty pickers rem
   mocks.product.mockResolvedValue({ ...view, groups: [], templates: [] })
   const { unmount } = mount("variant")
   expect(
-    await screen.findByText(/Add specification templates on the product/)
+    await screen.findByText(/Add attribute templates on the product/)
   ).toBeInTheDocument()
   unmount()
   mount()
   await userEvent.click(
     await screen.findByRole("button", {
-      name: "Manage specification templates",
+      name: "Manage attribute templates",
     })
   )
   expect(screen.getByText(/No active groups are available/)).toBeInTheDocument()
   await userEvent.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
 })
@@ -429,7 +427,7 @@ test("unassigned variants explain product-level assignment and empty pickers rem
 test("loading, failed reads and permission denial recover without breaking native pages", async () => {
   mocks.product.mockImplementationOnce(() => new Promise(() => {}))
   const { unmount } = mount()
-  expect(screen.getByText("Loading specifications…")).toBeInTheDocument()
+  expect(screen.getByText("Loading attributes…")).toBeInTheDocument()
   unmount()
   mocks.product.mockRejectedValueOnce({ status: 403 })
   mount()
@@ -471,7 +469,7 @@ test("pending template assignment prevents opening an editor with an outdated sc
   mount()
   await userEvent.click(
     await screen.findByRole("button", {
-      name: "Manage specification templates",
+      name: "Manage attribute templates",
     })
   )
   await userEvent.click(
@@ -481,7 +479,7 @@ test("pending template assignment prevents opening an editor with an outdated sc
     expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled()
   )
   expect(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   ).toBeDisabled()
   complete({ ...view, groups: [{ ...view.groups[0]!, version: 2 }] })
   await waitFor(() =>
@@ -499,7 +497,7 @@ test("public product and variant widget contracts use supported zones and native
     </QueryClientProvider>
   )
   expect(
-    await screen.findByRole("region", { name: "Specifications" })
+    await screen.findByRole("region", { name: "Product attributes" })
   ).toBeInTheDocument()
   expect(productConfig.zone).toBe("product.details")
   expect(variantConfig.zone).toBe("product_variant.details")
@@ -538,12 +536,12 @@ test("public product and variant widget contracts use supported zones and native
     )
   const direct = mountVariant("product")
   expect(
-    await screen.findByRole("region", { name: "Variant specifications" })
+    await screen.findByRole("region", { name: "Variant attributes" })
   ).toBeInTheDocument()
   direct.unmount()
   const fallback = mountVariant()
   expect(
-    await screen.findByRole("region", { name: "Variant specifications" })
+    await screen.findByRole("region", { name: "Variant attributes" })
   ).toBeInTheDocument()
   fallback.unmount()
   mountVariant(undefined, "/plain")
@@ -625,9 +623,9 @@ test("applicable fields are editable while the existing selection and pinned ver
     groups: [{ ...view.groups[0], field_keys: ["ports"] }],
   })
   mount()
-  await screen.findByRole("region", { name: "Specifications" })
+  await screen.findByRole("region", { name: "Product attributes" })
   await user.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   const selector = await screen.findByRole("combobox", {
     name: "Applicable fields · Switch",
@@ -658,26 +656,26 @@ test("loading template definitions can fail and recover without losing current p
   const user = userEvent.setup()
   mocks.template.mockRejectedValueOnce(new Error("Template read unavailable"))
   mount()
-  await screen.findByRole("region", { name: "Specifications" })
+  await screen.findByRole("region", { name: "Product attributes" })
   await user.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Template read unavailable"
   )
   await user.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   await screen.findByRole("combobox", { name: "Applicable fields · Switch" })
   await user.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   expect(
     screen.queryByRole("combobox", { name: "Applicable fields · Switch" })
   ).not.toBeInTheDocument()
   expect(screen.getByText("0 ports")).toBeInTheDocument()
   await user.click(
-    screen.getByRole("button", { name: "Manage specification templates" })
+    screen.getByRole("button", { name: "Manage attribute templates" })
   )
   await screen.findByRole("combobox", { name: "Applicable fields · Switch" })
   expect(mocks.template).toHaveBeenCalledTimes(2)

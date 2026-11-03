@@ -60,7 +60,7 @@ const ValuesEditor = ({
       dirty &&
       !(await prompt({
         title: "Discard changes?",
-        description: "Your unsaved specification values will be lost.",
+        description: "Your unsaved attribute values will be lost.",
         confirmText: "Discard",
         cancelText: "Keep editing",
       }))
@@ -82,7 +82,7 @@ const ValuesEditor = ({
           : { values }),
       })
       onSaved(result)
-      toast.success("Specifications saved")
+      toast.success("Product attributes saved")
       onClose()
     } catch (failure) {
       setError(errorMessage(failure))
@@ -94,7 +94,7 @@ const ValuesEditor = ({
   const reload = async () => {
     const previouslyFocused = document.activeElement
     const confirmed = await prompt({
-      title: "Reload specifications?",
+      title: "Reload attributes?",
       description:
         "This discards the unsaved values and loads the latest product.",
       confirmText: "Reload",
@@ -130,7 +130,7 @@ const ValuesEditor = ({
       >
         <Drawer.Header>
           <Drawer.Title>
-            {variantId ? "Edit variant specifications" : "Edit specifications"}
+            {variantId ? "Edit variant attributes" : "Edit attributes"}
           </Drawer.Title>
           <Drawer.Description>
             Edit the applicable groups below. Blank values remain unknown.
@@ -261,14 +261,14 @@ export const Specifications = ({
   if (query.isPending)
     return (
       <Container className="p-0">
-        <Feedback title="Loading specifications…" />
+        <Feedback title="Loading attributes…" />
       </Container>
     )
   if (query.isError)
     return (
       <Container className="p-0">
         <Feedback
-          title="Specifications could not be loaded"
+          title="Product attributes could not be loaded"
           retry={() => {
             void query.refetch()
           }}
@@ -283,7 +283,7 @@ export const Specifications = ({
   if (variantId && !variant)
     return (
       <Container>
-        <Feedback title="Variant specifications unavailable" error>
+        <Feedback title="Variant attributes unavailable" error>
           This variant could not be found on this product.
         </Feedback>
       </Container>
@@ -302,9 +302,9 @@ export const Specifications = ({
           )
       ) &&
       !(await prompt({
-        title: "Remove specification templates?",
+        title: "Remove attribute templates?",
         description:
-          "Values in removed groups will leave the current specification. Previous revisions remain recorded.",
+          "Values in removed groups will leave the current attribute revision. Previous revisions remain recorded.",
         confirmText: "Save templates",
         cancelText: "Cancel",
       }))
@@ -329,7 +329,7 @@ export const Specifications = ({
         })
       )
       setSelecting(false)
-      toast.success("Product specification templates saved")
+      toast.success("Attribute templates saved")
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {
@@ -377,15 +377,15 @@ export const Specifications = ({
     <Container
       className="divide-y p-0"
       role="region"
-      aria-label={variantId ? "Variant specifications" : "Specifications"}
+      aria-label={variantId ? "Variant attributes" : "Product attributes"}
     >
       <div className="flex flex-wrap items-start justify-between gap-3 px-6 py-4">
         <div>
           <Heading level="h2">
-            {variantId ? "Variant specifications" : "Specifications"}
+            {variantId ? "Variant attributes" : "Product attributes"}
           </Heading>
           <Text size="small" className="mt-1 text-ui-fg-subtle">
-            {view.groups.length} specification templates
+            {view.groups.length} attribute templates
           </Text>
         </div>
         {view.groups.length > 0 && (
@@ -414,10 +414,10 @@ export const Specifications = ({
         </div>
       )}
       {view.groups.length === 0 ? (
-        <Feedback title="No specification templates">
+        <Feedback title="No attribute templates">
           {variantId
-            ? "Add specification templates on the product to define variant fields."
-            : "Add reusable groups to enter technical specifications for this product."}
+            ? "Add attribute templates on the product to define variant fields."
+            : "Add reusable groups to enter product attributes for this product."}
         </Feedback>
       ) : fields.length === 0 ? (
         <Feedback title={`No ${variantId ? "variant" : "product"} fields`}>
@@ -483,7 +483,7 @@ export const Specifications = ({
               else void chooseGroups(view.groups.map((group) => group.id))
             }}
           >
-            Manage specification templates
+            Manage attribute templates
           </Button>
           {selecting && (
             <div className="flex flex-col gap-3">
@@ -493,7 +493,7 @@ export const Specifications = ({
                 </Text>
               )}
               <Combobox
-                aria-label="Product specification templates"
+                aria-label="Attribute templates"
                 options={[
                   ...view.templates,
                   ...view.groups.filter(
@@ -551,7 +551,7 @@ export const Specifications = ({
               {view.templates.length === 0 && (
                 <Text size="small" className="text-ui-fg-subtle">
                   No active groups are available. Create one in Settings →
-                  Product specification templates.
+                  Attribute templates.
                 </Text>
               )}
             </div>

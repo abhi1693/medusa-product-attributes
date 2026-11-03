@@ -66,7 +66,7 @@ const template: TemplateRevision = {
   version: 2,
   source: "admin",
   archived: false,
-  description: "Network device specifications",
+  description: "Network device attributes",
   category_ids: [],
   fields: [
     {
@@ -187,7 +187,7 @@ test("template list searches, paginates, includes archived records and creates s
       fields: [],
     })
   )
-  expect(config.label).toBe("Product specification templates")
+  expect(config.label).toBe("Attribute templates")
 })
 
 test("list distinguishes first-use emptiness, filtered emptiness and read-only access", async () => {
@@ -349,7 +349,7 @@ test("deletion is confirmed, reports assigned-template rejection and returns to 
   await user.click(screen.getByRole("button", { name: "Delete" }))
   expect(
     await screen.findByRole("heading", {
-      name: "Product specification templates",
+      name: "Attribute templates",
     })
   ).toBeInTheDocument()
   expect(mocks.deleteTemplate).toHaveBeenCalledWith("template", 2)

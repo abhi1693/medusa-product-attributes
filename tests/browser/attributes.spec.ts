@@ -77,7 +77,7 @@ test("create and revise a template through native Admin controls", async ({
   await page.goto(route)
   await expect(
     page.getByRole("heading", {
-      name: "Product specification templates",
+      name: "Attribute templates",
       exact: true,
     })
   ).toBeVisible()
@@ -85,7 +85,7 @@ test("create and revise a template through native Admin controls", async ({
     .getByRole("button", { name: "Create template", exact: true })
     .click()
   const dialog = page.getByRole("dialog")
-  await dialog.getByLabel("Name", { exact: true }).fill("Device specifications")
+  await dialog.getByLabel("Name", { exact: true }).fill("Device attributes")
   await dialog.getByLabel("Key", { exact: true }).fill("device_specifications")
   await dialog
     .getByLabel("Description", { exact: false })
@@ -130,7 +130,7 @@ test("create and revise a template through native Admin controls", async ({
   await expect(dialog).toHaveCount(0)
   await page.getByRole("link", { name: /Device specifications/ }).click()
   await expect(
-    page.getByRole("heading", { name: "Device specifications", exact: true })
+    page.getByRole("heading", { name: "Device attributes", exact: true })
   ).toBeVisible()
   await page
     .getByRole("button", { name: "Create version", exact: true })
@@ -274,10 +274,10 @@ test("typed values, stale writes and native publication preserve specification r
   await login(page)
   await page.goto(`/app/products/${fixture.product.id}`)
   await expect(
-    page.getByRole("heading", { name: "Specifications", exact: true })
+    page.getByRole("heading", { name: "Product attributes", exact: true })
   ).toBeVisible()
   await page
-    .getByRole("region", { name: "Specifications", exact: true })
+    .getByRole("region", { name: "Product attributes", exact: true })
     .getByRole("button", { name: "Edit", exact: true })
     .click()
   const editor = page.getByRole("dialog")
@@ -349,7 +349,7 @@ test("typed values, stale writes and native publication preserve specification r
     fullPage: true,
   })
   await page
-    .getByRole("region", { name: "Specifications", exact: true })
+    .getByRole("region", { name: "Product attributes", exact: true })
     .screenshot({
       path: "test-results/product-specifications-card.png",
     })
@@ -357,7 +357,7 @@ test("typed values, stale writes and native publication preserve specification r
     `/app/products/${fixture.product.id}/variants/${fixture.product.variants[0].id}`
   )
   const variantRegion = page.getByRole("region", {
-    name: "Variant specifications",
+    name: "Variant attributes",
     exact: true,
   })
   await expect(variantRegion).toBeVisible()
@@ -397,7 +397,7 @@ test("reader sees templates but cannot change them through the UI or API", async
     headers: administrator,
     data: {
       key: "catalog_specifications",
-      name: "Catalog specifications",
+      name: "Catalog attributes",
       fields: [
         {
           key: "model",
@@ -420,7 +420,7 @@ test("reader sees templates but cannot change them through the UI or API", async
   await page.goto(route)
   await expect(
     page.getByRole("heading", {
-      name: "Product specification templates",
+      name: "Attribute templates",
       exact: true,
     })
   ).toBeVisible()
@@ -556,7 +556,7 @@ test("Store attributes require a published product in the publishable key's chan
   ]
   const { template } = await post(`${root}/templates`, {
     key: "adapter_specifications",
-    name: "Adapter specifications",
+    name: "Adapter attributes",
     fields,
   })
   const state = await (
@@ -722,7 +722,7 @@ test("template impact lists products pinned to earlier schema versions", async (
   })
   const definition = {
     key: "accessory_specifications",
-    name: "Accessory specifications",
+    name: "Accessory attributes",
     fields: [
       {
         key: "model",
@@ -878,7 +878,7 @@ test("several reusable groups edit and reload on native products with clear opti
   await login(page)
   await page.goto("/app/products/" + products[0].id)
   const region = page.getByRole("region", {
-    name: "Specifications",
+    name: "Product attributes",
     exact: true,
   })
   await expect(

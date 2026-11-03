@@ -144,4 +144,4 @@ A product can reuse multiple specification templates and explicitly select the f
 
 Use `service.seedDefinitions(definitions, actorId)` for editable database definitions. It creates missing Admin templates once and preserves existing edits, archives and deletion tombstones on replay. Configuration synchronization remains an explicit separate capability for applications that intentionally require code-managed definitions.
 
-Settings → Product specification templates supports deletion of unused Admin templates. Remove current product assignments first, or archive a template to preserve them. Deletion retains immutable history; pinned historical revisions remain readable for compensation and audit. All writes retain the existing authorization and stale-version checks.
+Settings → Attribute templates supports deletion of unused Admin templates. Remove current product assignments first, or archive a template to preserve them. Deletion retains immutable history; pinned historical revisions remain readable for compensation and audit. All writes retain the existing authorization and stale-version checks.

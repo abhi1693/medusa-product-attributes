@@ -35,7 +35,7 @@ import { restoreFocus } from "../../src/admin/lib/focus"
 const largeTemplate: TemplateRevision = {
   id: "large",
   key: "many_fields",
-  name: "Large specifications",
+  name: "Large attributes",
   description: "",
   category_ids: [],
   version: 1,
@@ -86,9 +86,7 @@ test("large schemas use the native discard prompt above the editor and keep keyb
   await waitFor(() => expect(modal.contains(document.activeElement)).toBe(true))
   expect(lastField).toHaveFocus()
   expect(close).not.toHaveBeenCalled()
-  expect(screen.getByLabelText("Name")).toHaveValue(
-    "Large specifications revised"
-  )
+  expect(screen.getByLabelText("Name")).toHaveValue("Large attributes revised")
   await user.click(lastField)
   await user.keyboard("{Escape}")
   const secondPrompt = await screen.findByRole("alertdialog", {
