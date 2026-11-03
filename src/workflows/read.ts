@@ -24,23 +24,22 @@ export async function productState(
   const service =
     container.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
   const specification = await service.specification(productId)
-  const template = specification
-    ? await service.revision(
-        specification.template_id,
-        specification.template_version
-      )
-    : null
+  const groups = await Promise.all(
+    (specification?.groups || []).map((group) =>
+      service.revision(group.template_id, group.template_version)
+    )
+  )
   return {
     product,
     service,
     specification,
-    template,
+    groups,
     namespace: service.configuration.metadata_key,
   }
 }
 
 export function productIssues(
-  template: TemplateRevision,
+  template: Pick<TemplateRevision, "fields">,
   snapshot: {
     values: AttributeValues
     variants: Array<{ id: string; values: AttributeValues }>
@@ -80,9 +79,9 @@ export async function validateProduct(
   complete?: boolean
 ) {
   const state = await productState(container, productId)
-  return state.template && state.specification
+  return state.specification
     ? productIssues(
-        state.template,
+        { fields: state.groups.flatMap((group) => group.fields) },
         specificationSnapshot(state.product, state.specification),
         complete ?? state.product.status === "published"
       )
@@ -109,7 +108,7 @@ export async function productView(
   productId: string,
   canWrite: boolean
 ): Promise<ProductAttributes> {
-  const { product, service, specification, template } = await productState(
+  const { product, service, specification, groups } = await productState(
     container,
     productId
   )
@@ -119,7 +118,7 @@ export async function productView(
   )
   return {
     product_id: product.id,
-    template,
+    groups,
     assignment_version: specification?.version || 0,
     version,
     values: specification?.values || {},
@@ -129,14 +128,13 @@ export async function productView(
       version,
       values: specification?.variants[variant.id] || {},
     })),
-    validation:
-      template && specification
-        ? productIssues(
-            template,
-            specificationSnapshot(product, specification),
-            true
-          )
-        : [],
+    validation: specification
+      ? productIssues(
+          { fields: groups.flatMap((group) => group.fields) },
+          specificationSnapshot(product, specification),
+          true
+        )
+      : [],
     templates: (await service.page({ limit: 1000 })).templates.map(
       (template) => ({
         ...template,

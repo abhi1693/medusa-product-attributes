@@ -187,9 +187,7 @@ export const TemplateEditor = ({
       >
         <FocusModal.Header>
           <FocusModal.Title>
-            {template && !duplicate
-              ? "Create template version"
-              : "Create template"}
+            {template && !duplicate ? "Create group version" : "Create group"}
           </FocusModal.Title>
           <FocusModal.Description className="sr-only">
             Define reusable product and variant specifications.
@@ -231,7 +229,7 @@ export const TemplateEditor = ({
                 <Heading level="h1">
                   {template && !duplicate
                     ? `Version ${draft.version! + 1}`
-                    : "Specification template"}
+                    : "Specification group"}
                 </Heading>
                 <Text size="small" className="mt-2 text-ui-fg-subtle">
                   Define the fields your products share. Existing assignments
@@ -613,7 +611,7 @@ export const TemplateEditor = ({
                 isLoading={pending}
                 disabled={draft.fields.length === 0 || stale}
               >
-                {template && !duplicate ? "Create version" : "Create template"}
+                {template && !duplicate ? "Create version" : "Create group"}
               </Button>
             </div>
           </FocusModal.Footer>

@@ -76,11 +76,9 @@ test("create and revise a template through native Admin controls", async ({
   await login(page)
   await page.goto(route)
   await expect(
-    page.getByRole("heading", { name: "Product attributes", exact: true })
+    page.getByRole("heading", { name: "Specification groups", exact: true })
   ).toBeVisible()
-  await page
-    .getByRole("button", { name: "Create template", exact: true })
-    .click()
+  await page.getByRole("button", { name: "Create group", exact: true }).click()
   const dialog = page.getByRole("dialog")
   await dialog.getByLabel("Name", { exact: true }).fill("Device specifications")
   await dialog.getByLabel("Key", { exact: true }).fill("device_specifications")
@@ -122,7 +120,7 @@ test("create and revise a template through native Admin controls", async ({
     fullPage: true,
   })
   await dialog
-    .getByRole("button", { name: "Create template", exact: true })
+    .getByRole("button", { name: "Create group", exact: true })
     .click()
   await expect(dialog).toHaveCount(0)
   await page.getByRole("link", { name: /Device specifications/ }).click()
@@ -251,13 +249,14 @@ test("typed values, stale writes and native publication preserve specification r
     await request.get(`${root}/products/${fixture.product.id}`, { headers })
   ).json()
   const assigned = await request.post(
-    `${root}/products/${fixture.product.id}/assignment`,
+    `${root}/products/${fixture.product.id}/groups`,
     {
       headers,
       data: {
         version: state.version,
-        template_id: template.id,
-        template_version: template.version,
+        groups: [
+          { template_id: template.id, template_version: template.version },
+        ],
       },
     }
   )
@@ -415,10 +414,10 @@ test("reader sees templates but cannot change them through the UI or API", async
   await login(page, "reader")
   await page.goto(route)
   await expect(
-    page.getByRole("heading", { name: "Product attributes", exact: true })
+    page.getByRole("heading", { name: "Specification groups", exact: true })
   ).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "Create template", exact: true })
+    page.getByRole("button", { name: "Create group", exact: true })
   ).toBeDisabled()
   await expect(page.getByText(/Read-only access/)).toBeVisible()
   await page.getByRole("link", { name: /Catalog specifications/ }).click()
@@ -555,10 +554,9 @@ test("Store attributes require a published product in the publishable key's chan
   const state = await (
     await request.get(`${root}/products/${product.id}`, { headers })
   ).json()
-  const assigned = await post(`${root}/products/${product.id}/assignment`, {
+  const assigned = await post(`${root}/products/${product.id}/groups`, {
     version: state.version,
-    template_id: template.id,
-    template_version: template.version,
+    groups: [{ template_id: template.id, template_version: template.version }],
   })
   // This value exists only in immutable specification history. It is absent
   // from native commerce fields and every relation-probe request below.
@@ -599,11 +597,11 @@ test("Store attributes require a published product in the publishable key's chan
   expect(visible.ok(), await visible.text()).toBeTruthy()
   const body = (await visible.json()) as StoreProductAttributes
   expect(body.product_id).toBe(product.id)
-  expect(body.template.key).toBe("adapter_specifications")
-  expect(body.template.version).toBe(template.version)
-  expect(body.template.fields).toEqual(fields)
+  expect(body.groups[0].key).toBe("adapter_specifications")
+  expect(body.groups[0].version).toBe(template.version)
+  expect(body.groups[0].fields).toEqual(fields)
   expect(
-    [...new Set(body.template.fields.map((field) => field.type))].sort()
+    [...new Set(body.groups[0].fields.map((field) => field.type))].sort()
   ).toEqual(["boolean", "multi_select", "number", "single_select", "text"])
   expect(body.values).toEqual({
     model: "Reference adapter",
@@ -734,10 +732,9 @@ test("template impact lists products pinned to earlier schema versions", async (
   const state = await (
     await request.get(`${root}/products/${product.id}`, { headers })
   ).json()
-  await post(`${root}/products/${product.id}/assignment`, {
+  await post(`${root}/products/${product.id}/groups`, {
     version: state.version,
-    template_id: template.id,
-    template_version: 1,
+    groups: [{ template_id: template.id, template_version: 1 }],
   })
   await post(`${root}/templates/${template.id}`, {
     ...definition,

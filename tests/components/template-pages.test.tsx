@@ -177,7 +177,7 @@ test("template list searches, paginates, includes archived records and creates s
       include_archived: true,
     })
   )
-  await user.click(screen.getByRole("button", { name: "Create template" }))
+  await user.click(screen.getByRole("button", { name: "Create group" }))
   await user.click(screen.getByRole("button", { name: "Submit editor" }))
   await waitFor(() =>
     expect(mocks.createTemplate).toHaveBeenCalledWith({
@@ -186,7 +186,7 @@ test("template list searches, paginates, includes archived records and creates s
       fields: [],
     })
   )
-  expect(config.label).toBe("Product attributes")
+  expect(config.label).toBe("Specification groups")
 })
 
 test("list distinguishes first-use emptiness, filtered emptiness and read-only access", async () => {
@@ -197,7 +197,7 @@ test("list distinguishes first-use emptiness, filtered emptiness and read-only a
   })
   const { unmount } = mount()
   expect(await screen.findByText("No templates yet")).toBeInTheDocument()
-  expect(screen.getByRole("button", { name: "Create template" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Create group" })).toBeDisabled()
   expect(screen.getByText(/Read-only access/)).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText("Search templates"), {
     target: { value: "missing" },

@@ -33,7 +33,7 @@ describe("owning-module specification reads", () => {
     expect(specificationVersion(null)).toBe("unassigned")
     const view = await productView(h.container, h.product.id, false)
     expect(view).toMatchObject({
-      template: null,
+      groups: [],
       assignment_version: 0,
       version: "unassigned",
       values: {},

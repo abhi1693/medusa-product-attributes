@@ -55,7 +55,7 @@ const access: AccessControlOptions = {
               profile: {
                 actions: { GET: "values_read" },
                 children: {
-                  assignment: commandProfile("values_write"),
+                  groups: commandProfile("values_write"),
                   values: commandProfile("values_write"),
                   validate: commandProfile("values_read"),
                   export: commandProfile("values_export"),

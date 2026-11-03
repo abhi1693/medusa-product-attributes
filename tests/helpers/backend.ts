@@ -58,8 +58,7 @@ export function harness(assigned = true) {
     ? {
         id: "pspec_test",
         product_id: product.id,
-        template_id: template.id,
-        template_version: 1,
+        groups: [{ template_id: template.id, template_version: 1 }],
         version: 1,
         revision_id: "psrev_1",
         linked: true,
@@ -71,8 +70,7 @@ export function harness(assigned = true) {
     ...(specification || {
       id: "pspec_test",
       product_id: product.id,
-      template_id: template.id,
-      template_version: 1,
+      groups: [{ template_id: template.id, template_version: 1 }],
       values: {},
       variants: {},
     }),

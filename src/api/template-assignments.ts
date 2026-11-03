@@ -41,20 +41,13 @@ export async function templateAssignments(
   const service =
     req.scope.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
   const template = await service.revision(req.params.id)
-  const [specifications, count] =
-    await service.listAndCountProductSpecifications(
-      {
-        template_id: template.id,
-        linked: true,
-        ...(outdated ? { template_version: { $lt: template.version } } : {}),
-      },
-      {
-        skip: offset,
-        take: limit,
-        order: { id: "ASC" },
-        select: ["id", "product_id", "template_version"],
-      }
-    )
+  const [specifications, count] = await service.assignments(
+    template.id,
+    template.version,
+    offset,
+    limit,
+    outdated
+  )
   const visible = [] as typeof specifications
   for (const specification of specifications)
     if (

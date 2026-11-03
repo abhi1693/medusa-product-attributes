@@ -65,7 +65,7 @@ export default class ProductAttributesService extends MedusaService({
   ): Promise<OwnedSpecification | null> {
     const manager = context!.transactionManager || context!.manager!
     const [record] = await manager.execute<OwnedSpecification[]>(
-      `select s.id,s.product_id,s.template_id,s.template_version,s.version,s.linked,r.id as revision_id,r.values,r.variants from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.product_id=? and s.deleted_at is null${includeUnlinked ? "" : " and s.linked=true"}`,
+      `select s.id,s.product_id,r.groups,s.version,s.linked,r.id as revision_id,r.values,r.variants from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.product_id=? and s.deleted_at is null${includeUnlinked ? "" : " and s.linked=true"}`,
       [productId]
     )
     return record || null
@@ -84,28 +84,35 @@ export default class ProductAttributesService extends MedusaService({
       (before?.version || 0) !== input.expected_version
     )
       conflict()
-    const template = await this.revision(
-      input.template_id,
-      input.template_version,
-      context
-    )
     if (
-      template.archived &&
-      (!before ||
-        before.template_id !== template.id ||
-        before.template_version !== template.version)
+      input.groups.length > 30 ||
+      new Set(input.groups.map((group) => group.template_id)).size !==
+        input.groups.length
     )
-      invalid("Archived templates cannot be assigned")
+      invalid("Choose each specification group only once (maximum 30)")
+    const groups = await Promise.all(
+      input.groups.map((group) =>
+        this.revision(group.template_id, group.template_version, context)
+      )
+    )
+    for (const group of groups)
+      if (
+        group.archived &&
+        !before?.groups.some(
+          (old) =>
+            old.template_id === group.id &&
+            old.template_version === group.version
+        )
+      )
+        invalid("Archived groups cannot be assigned")
+    const fields = groups.flatMap((group) => group.fields)
+    if (new Set(fields.map((field) => field.key)).size !== fields.length)
+      invalid("Groups contain duplicate field keys")
     const issues = [
-      ...validateValues(
-        template.fields,
-        input.values,
-        "product",
-        input.complete
-      ),
+      ...validateValues(fields, input.values, "product", input.complete),
       ...Object.entries(input.variants).flatMap(([id, values]) =>
         validateValues(
-          template.fields,
+          fields,
           values,
           "variant",
           input.complete,
@@ -122,22 +129,15 @@ export default class ProductAttributesService extends MedusaService({
     const version = (before?.version || 0) + 1
     if (!before)
       await manager.execute(
-        "insert into product_specification(id,product_id,template_id,template_version,version,linked) values(?,?,?,?,?,false)",
-        [
-          id,
-          input.product_id,
-          input.template_id,
-          input.template_version,
-          version,
-        ]
+        "insert into product_specification(id,product_id,version,linked) values(?,?,?,false)",
+        [id, input.product_id, version]
       )
     await manager.execute(
-      'insert into product_specification_revision(id,specification_id,template_id,template_version,version,"values",variants,actor_id) values(?,?,?,?,?,?::jsonb,?::jsonb,?)',
+      'insert into product_specification_revision(id,specification_id,groups,version,"values",variants,actor_id) values(?,?,?::jsonb,?,?::jsonb,?::jsonb,?)',
       [
         revisionId,
         id,
-        input.template_id,
-        input.template_version,
+        JSON.stringify(input.groups),
         version,
         JSON.stringify(input.values),
         JSON.stringify(input.variants),
@@ -145,8 +145,8 @@ export default class ProductAttributesService extends MedusaService({
       ]
     )
     await manager.execute(
-      "update product_specification set template_id=?,template_version=?,version=?,current_revision_id=?,updated_at=now() where id=?",
-      [input.template_id, input.template_version, version, revisionId, id]
+      "update product_specification set version=?,current_revision_id=?,updated_at=now() where id=?",
+      [version, revisionId, id]
     )
     const created: SpecificationWriteReceipt["created_variants"] = []
     for (const variantId of Object.keys(input.variants)) {
@@ -173,8 +173,7 @@ export default class ProductAttributesService extends MedusaService({
       after: {
         id,
         product_id: input.product_id,
-        template_id: input.template_id,
-        template_version: input.template_version,
+        groups: input.groups,
         version,
         revision_id: revisionId,
         values: input.values,
@@ -224,26 +223,19 @@ export default class ProductAttributesService extends MedusaService({
     if (receipt.before) {
       const version = current.version + 1
       await manager.execute(
-        "insert into product_specification_revision(id,specification_id,template_id,template_version,version,\"values\",variants,actor_id) values(?,?,?,?,?,?::jsonb,?::jsonb,'system:compensation')",
+        "insert into product_specification_revision(id,specification_id,groups,version,\"values\",variants,actor_id) values(?,?,?::jsonb,?,?::jsonb,?::jsonb,'system:compensation')",
         [
           compensationId,
           current.id,
-          receipt.before.template_id,
-          receipt.before.template_version,
+          JSON.stringify(receipt.before.groups),
           version,
           JSON.stringify(receipt.before.values),
           JSON.stringify(receipt.before.variants),
         ]
       )
       await manager.execute(
-        "update product_specification set template_id=?,template_version=?,version=?,current_revision_id=?,updated_at=now() where id=?",
-        [
-          receipt.before.template_id,
-          receipt.before.template_version,
-          version,
-          compensationId,
-          current.id,
-        ]
+        "update product_specification set version=?,current_revision_id=?,updated_at=now() where id=?",
+        [version, compensationId, current.id]
       )
       for (const reference of receipt.created_variants)
         await manager.execute(
@@ -267,6 +259,38 @@ export default class ProductAttributesService extends MedusaService({
         current.id,
       ])
     }
+  }
+
+  @InjectManager()
+  async assignments(
+    templateId: string,
+    version: number,
+    offset: number,
+    limit: number,
+    outdated: boolean,
+    @MedusaContext() context?: Context<EntityManager>
+  ) {
+    const manager = context!.transactionManager || context!.manager!
+    const where =
+      "s.deleted_at is null and s.linked=true and g->>'template_id'=?" +
+      (outdated ? " and (g->>'template_version')::integer < ?" : "")
+    const params = outdated ? [templateId, version] : [templateId]
+    const from =
+      "from product_specification s join product_specification_revision r on r.id=s.current_revision_id cross join lateral jsonb_array_elements(r.groups) g where " +
+      where
+    const records = await manager.execute<
+      Array<{ product_id: string; template_version: number }>
+    >(
+      "select s.product_id,(g->>'template_version')::integer as template_version " +
+        from +
+        " order by s.id offset ? limit ?",
+      [...params, offset, limit]
+    )
+    const [count] = await manager.execute<Array<{ count: string }>>(
+      "select count(*) " + from,
+      params
+    )
+    return [records, Number(count.count)] as const
   }
 
   @InjectManager()

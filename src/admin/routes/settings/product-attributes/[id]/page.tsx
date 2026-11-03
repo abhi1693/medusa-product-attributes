@@ -54,7 +54,7 @@ const TemplateDetailPage = () => {
   }
   const archive = async () => {
     const confirmed = await prompt({
-      title: "Archive template?",
+      title: "Archive group?",
       description:
         "Existing assignments keep their version and values. This template will no longer be available for new assignments.",
       confirmText: "Archive",
@@ -80,7 +80,7 @@ const TemplateDetailPage = () => {
         className="flex w-fit items-center gap-2 text-sm text-ui-fg-subtle hover:text-ui-fg-base"
       >
         <ArrowLeft />
-        Product attributes
+        Specification groups
       </Link>
       <Container className="divide-y p-0">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-4">

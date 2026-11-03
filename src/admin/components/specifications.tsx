@@ -46,9 +46,9 @@ const ValuesEditor = ({
       setFocusAfterReload(false)
     }
   }, [pending, focusAfterReload])
-  const fields = view.template!.fields.filter(
-    (field) => field.scope === (variantId ? "variant" : "product")
-  )
+  const fields = view.groups
+    .flatMap((group) => group.fields)
+    .filter((field) => field.scope === (variantId ? "variant" : "product"))
   const close = async () => {
     if (pending) return
     const previouslyFocused = document.activeElement
@@ -129,7 +129,7 @@ const ValuesEditor = ({
             {variantId ? "Edit variant specifications" : "Edit specifications"}
           </Drawer.Title>
           <Drawer.Description>
-            {view.template!.name} · Version {view.template!.version}
+            Edit the applicable groups below. Blank values remain unknown.
           </Drawer.Description>
         </Drawer.Header>
         <form
@@ -168,16 +168,29 @@ const ValuesEditor = ({
               disabled={pending || !view.can_write}
               className="flex flex-col gap-5"
             >
-              {fields.map((field) => (
-                <AttributeInput
-                  key={field.key}
-                  field={field}
-                  value={values[field.key]}
-                  onChange={(value) => {
-                    setValues((current) => ({ ...current, [field.key]: value }))
-                    setDirty(true)
-                  }}
-                />
+              {view.groups.map((group) => (
+                <section key={group.id} className="flex flex-col gap-4">
+                  <Heading level="h3">{group.name}</Heading>
+                  {group.fields
+                    .filter(
+                      (field) =>
+                        field.scope === (variantId ? "variant" : "product")
+                    )
+                    .map((field) => (
+                      <AttributeInput
+                        key={field.key}
+                        field={field}
+                        value={values[field.key]}
+                        onChange={(value) => {
+                          setValues((current) => ({
+                            ...current,
+                            [field.key]: value,
+                          }))
+                          setDirty(true)
+                        }}
+                      />
+                    ))}
+                </section>
               ))}
             </fieldset>
             <Text size="xsmall" className="text-ui-fg-subtle">
@@ -225,7 +238,7 @@ export const Specifications = ({
   const prompt = usePrompt()
   const [editing, setEditing] = useState(false)
   const [selecting, setSelecting] = useState(false)
-  const [templateId, setTemplateId] = useState<string>()
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const query = useQuery({
@@ -265,22 +278,18 @@ export const Specifications = ({
         </Feedback>
       </Container>
     )
-  const fields =
-    view.template?.fields.filter(
-      (field) => field.scope === (variantId ? "variant" : "product")
-    ) || []
+  const fields = view.groups
+    .flatMap((group) => group.fields)
+    .filter((field) => field.scope === (variantId ? "variant" : "product"))
   const values = variant ? variant.values : view.values
-  const latest = view.templates.find(
-    (template) => template.id === view.template?.id
-  )
-  const assignment = async (id: string, version: number) => {
+  const assignment = async () => {
     if (
-      view.template &&
+      view.groups.some((group) => !selectedGroups.includes(group.id)) &&
       !(await prompt({
-        title: "Update specification template?",
+        title: "Remove specification groups?",
         description:
-          "The selected version will be applied explicitly. Existing values are revalidated against its fields.",
-        confirmText: "Update template",
+          "Values in removed groups will leave the current specification. Previous revisions remain recorded.",
+        confirmText: "Save groups",
         cancelText: "Cancel",
       }))
     )
@@ -289,14 +298,18 @@ export const Specifications = ({
     setError(undefined)
     try {
       saved(
-        await attributesApi.assignTemplate(productId, {
+        await attributesApi.assignGroups(productId, {
           version: view.version,
-          template_id: id,
-          template_version: version,
+          groups: selectedGroups.map((id) => {
+            const existing = view.groups.find((group) => group.id === id)
+            const group =
+              existing || view.templates.find((group) => group.id === id)!
+            return { template_id: group.id, template_version: group.version }
+          }),
         })
       )
       setSelecting(false)
-      toast.success("Specification template updated")
+      toast.success("Specification groups saved")
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {
@@ -314,13 +327,11 @@ export const Specifications = ({
           <Heading level="h2">
             {variantId ? "Variant specifications" : "Specifications"}
           </Heading>
-          {view.template && (
-            <Text size="small" className="mt-1 text-ui-fg-subtle">
-              {view.template.name} · Version {view.template.version}
-            </Text>
-          )}
+          <Text size="small" className="mt-1 text-ui-fg-subtle">
+            {view.groups.length} specification groups
+          </Text>
         </div>
-        {view.template && (
+        {view.groups.length > 0 && (
           <Button
             size="small"
             variant="secondary"
@@ -345,33 +356,47 @@ export const Specifications = ({
           </Button>
         </div>
       )}
-      {!view.template ? (
-        <Feedback title="No specification template">
+      {view.groups.length === 0 ? (
+        <Feedback title="No specification groups">
           {variantId
-            ? "Assign a specification template on the product to define variant fields."
-            : "Choose a template to add structured specifications to this product."}
+            ? "Add specification groups on the product to define variant fields."
+            : "Add reusable groups to enter technical specifications for this product."}
         </Feedback>
       ) : fields.length === 0 ? (
         <Feedback title={`No ${variantId ? "variant" : "product"} fields`}>
-          This template defines fields for the other scope.
+          The assigned groups have no fields for this scope.
         </Feedback>
       ) : (
-        <dl className="divide-y">
-          {fields.map((field) => (
-            <div
-              key={field.key}
-              className="grid gap-1 px-6 py-3 sm:grid-cols-2"
-            >
-              <dt className="text-sm text-ui-fg-subtle">
-                {field.label}
-                {field.required && " *"}
-              </dt>
-              <dd className="break-words text-sm text-ui-fg-base">
-                {formatAttributeValue(field, values[field.key])}
-              </dd>
-            </div>
+        <div className="divide-y">
+          {view.groups.map((group) => (
+            <section key={group.id}>
+              <Heading level="h3" className="px-6 py-3">
+                {group.name}
+              </Heading>
+              <dl>
+                {group.fields
+                  .filter(
+                    (field) =>
+                      field.scope === (variantId ? "variant" : "product")
+                  )
+                  .map((field) => (
+                    <div
+                      key={field.key}
+                      className="grid gap-1 px-6 py-3 sm:grid-cols-2"
+                    >
+                      <dt className="text-sm text-ui-fg-subtle">
+                        {field.label}
+                        {field.required && " *"}
+                      </dt>
+                      <dd className="break-words text-sm text-ui-fg-base">
+                        {formatAttributeValue(field, values[field.key])}
+                      </dd>
+                    </div>
+                  ))}
+              </dl>
+            </section>
           ))}
-        </dl>
+        </div>
       )}
       {view.validation.length > 0 && (
         <div className="flex flex-col gap-2 px-6 py-4">
@@ -392,67 +417,54 @@ export const Specifications = ({
       )}
       {!variantId && view.can_write && (
         <fieldset disabled={pending} className="flex flex-col gap-3 px-6 py-4">
-          {latest &&
-            view.template &&
-            latest.version > view.template.version && (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Text size="small">Version {latest.version} is available.</Text>
-                <Button
-                  size="small"
-                  variant="secondary"
-                  disabled={pending}
-                  isLoading={pending}
-                  onClick={() => {
-                    void assignment(latest.id, latest.version)
-                  }}
-                >
-                  Adopt latest version
-                </Button>
-              </div>
-            )}
           <Button
             size="small"
             variant="transparent"
             className="w-fit"
-            onClick={() => setSelecting(!selecting)}
+            onClick={() => {
+              setSelectedGroups(view.groups.map((group) => group.id))
+              setSelecting(!selecting)
+            }}
           >
-            {view.template ? "Change template" : "Assign template"}
+            Manage specification groups
           </Button>
           {selecting && (
             <div className="flex flex-col gap-3">
               {view.templates.some((template) => template.recommended) && (
                 <Text size="small" className="text-ui-fg-subtle">
-                  Recommended templates match this product’s categories. You can
-                  choose any available template.
+                  Recommended groups match this product’s categories.
                 </Text>
               )}
               <Combobox
-                aria-label="Specification template"
-                options={view.templates.map((template) => ({
+                aria-label="Specification groups"
+                options={[
+                  ...view.templates,
+                  ...view.groups.filter(
+                    (group) =>
+                      !view.templates.some((item) => item.id === group.id)
+                  ),
+                ].map((template) => ({
                   label: `${template.name} · v${template.version}${template.recommended ? " · Recommended" : ""}`,
                   value: template.id,
                 }))}
-                value={templateId}
-                onChange={(value) => setTemplateId(value as string | undefined)}
-                placeholder="Select a template"
+                value={selectedGroups}
+                onChange={(value) => setSelectedGroups(value as string[])}
+                placeholder="Choose groups"
               />
               <Button
                 size="small"
                 className="w-fit"
-                disabled={!templateId || pending}
+                disabled={pending}
                 isLoading={pending}
                 onClick={() => {
-                  const template = view.templates.find(
-                    (item) => item.id === templateId
-                  )!
-                  void assignment(template.id, template.version)
+                  void assignment()
                 }}
               >
-                Apply template
+                Save groups
               </Button>
               {view.templates.length === 0 && (
                 <Text size="small" className="text-ui-fg-subtle">
-                  No active templates are available. Create one in Settings →
+                  No active groups are available. Create one in Settings →
                   Product attributes.
                 </Text>
               )}

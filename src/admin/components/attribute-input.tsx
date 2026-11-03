@@ -32,6 +32,7 @@ export const AttributeInput = ({
         {field.label}
         {field.required && <span className="text-ui-fg-error"> *</span>}
       </Label>
+      {field.help && <p className="text-sm text-ui-fg-subtle">{field.help}</p>}
       {field.type === "boolean" ? (
         <Select
           value={

@@ -54,8 +54,7 @@ describe("owned immutable write orchestration", () => {
           product_id: h.product.id,
           assignment: {
             version: "unassigned",
-            template_id: template.id,
-            template_version: 1,
+            groups: [{ template_id: template.id, template_version: 1 }],
           },
         },
         h
@@ -108,8 +107,7 @@ describe("owned immutable write orchestration", () => {
       product_id: h.product.id,
       assignment: {
         version: "unassigned",
-        template_id: template.id,
-        template_version: 1,
+        groups: [{ template_id: template.id, template_version: 1 }],
       },
       values: {
         version: "unassigned",
@@ -282,7 +280,7 @@ describe("owned immutable write orchestration", () => {
         { product_id: h.product.id, values: { version: "unassigned" } },
         h
       )
-    ).rejects.toThrow("Assign a template")
+    ).rejects.toThrow("Assign specification groups")
     h.service.revision.mockResolvedValue({ ...template, archived: true })
     await expect(
       prepareAttributesMutation(
@@ -290,8 +288,7 @@ describe("owned immutable write orchestration", () => {
           product_id: h.product.id,
           assignment: {
             version: "unassigned",
-            template_id: template.id,
-            template_version: 1,
+            groups: [{ template_id: template.id, template_version: 1 }],
           },
         },
         h
@@ -312,8 +309,7 @@ describe("owned immutable write orchestration", () => {
           product_id: assigned.product.id,
           assignment: {
             version,
-            template_id: template.id,
-            template_version: 2,
+            groups: [{ template_id: template.id, template_version: 2 }],
           },
         },
         assigned
@@ -408,8 +404,7 @@ describe("owned immutable write orchestration", () => {
             metadata: {
               product_attributes: {
                 revision_id: version,
-                template_id: template.id,
-                template_version: 1,
+                groups: [{ template_id: template.id, template_version: 1 }],
                 values: { model: "Example" },
               },
             },
@@ -452,10 +447,138 @@ describe("owned immutable write orchestration", () => {
         missing.product.id,
         "unassigned"
       )
-    ).rejects.toThrow("Assign a template")
-    h.service.revision.mockResolvedValue(null)
+    ).rejects.toThrow("Assign specification groups")
+    h.service.specification.mockResolvedValue(null)
     await expect(
       exportProductAttributesMetadata(h.container, h.product.id, version)
-    ).rejects.toThrow("Assign a template")
+    ).rejects.toThrow("Assign specification groups")
   })
+})
+
+it("composes reusable groups, rejects duplicate group and field assignments and removes only detached facts", async () => {
+  const h = harness()
+  const power = {
+    ...template,
+    id: "pat_power",
+    key: "power",
+    fields: [
+      {
+        ...template.fields[0],
+        key: "power_w",
+        type: "number" as const,
+        required: false,
+      },
+    ],
+  }
+  h.service.revision.mockImplementation(async (id: string) =>
+    id === power.id ? power : template
+  )
+  const group = { template_id: template.id, template_version: 1 }
+  const extra = { template_id: power.id, template_version: 1 }
+  const prepared = await prepareAttributesMutation(
+    {
+      product_id: h.product.id,
+      assignment: { version, groups: [group, extra] },
+      values: { version, values: { power_w: 9 } },
+    },
+    h
+  )
+  expect(prepared.output.groups).toEqual([group, extra])
+  expect(prepared.output.values).toEqual({ model: "Example", power_w: 9 })
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: h.product.id,
+        assignment: { version, groups: [group, group] },
+      },
+      h
+    )
+  ).rejects.toThrow("only once")
+  h.service.revision.mockResolvedValue(template)
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: h.product.id,
+        assignment: { version, groups: [group, extra] },
+      },
+      h
+    )
+  ).rejects.toThrow("duplicate field")
+  const removed = await prepareAttributesMutation(
+    { product_id: h.product.id, assignment: { version, groups: [] } },
+    h
+  )
+  expect(removed.output.values).toEqual({})
+  expect(removed.output.variants).toEqual({ variant_test: {} })
+})
+
+it("rejects new archived groups and excessive compositions before preparing values", async () => {
+  const h = harness(false)
+  h.service.revision.mockResolvedValue({ ...template, archived: true })
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: h.product.id,
+        assignment: {
+          version: "unassigned",
+          groups: [{ template_id: template.id, template_version: 1 }],
+        },
+      },
+      h
+    )
+  ).rejects.toThrow("Archived groups")
+  const existing = harness()
+  existing.service.revision.mockResolvedValue({
+    ...template,
+    id: "another",
+    archived: true,
+  })
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: existing.product.id,
+        assignment: {
+          version,
+          groups: [{ template_id: "another", template_version: 1 }],
+        },
+      },
+      existing
+    )
+  ).rejects.toThrow("Archived groups")
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: existing.product.id,
+        assignment: {
+          version,
+          groups: Array.from({ length: 31 }, (_, i) => ({
+            template_id: String(i),
+            template_version: 1,
+          })),
+        },
+      },
+      existing
+    )
+  ).rejects.toThrow("maximum 30")
+})
+
+it("does not treat another revision of an archived group as an existing pin", async () => {
+  const h = harness()
+  h.service.revision.mockResolvedValue({
+    ...template,
+    version: 2,
+    archived: true,
+  })
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: h.product.id,
+        assignment: {
+          version,
+          groups: [{ template_id: template.id, template_version: 2 }],
+        },
+      },
+      h
+    )
+  ).rejects.toThrow("Archived groups")
 })

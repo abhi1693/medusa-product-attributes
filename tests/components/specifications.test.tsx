@@ -18,7 +18,7 @@ import type { ProductAttributes } from "../../src/types"
 const mocks = vi.hoisted(() => ({
   product: vi.fn(),
   saveValues: vi.fn(),
-  assignTemplate: vi.fn(),
+  assignGroups: vi.fn(),
   prompt: vi.fn(),
 }))
 vi.mock("../../src/admin/lib/api", () => ({
@@ -42,39 +42,41 @@ const view: ProductAttributes = {
   assignment_version: 1,
   version: "product_v1",
   can_write: true,
-  template: {
-    id: "template",
-    key: "switch",
-    name: "Switch",
-    version: 1,
-    source: "admin",
-    archived: false,
-    category_ids: [],
-    description: "",
-    fields: [
-      {
-        key: "ports",
-        label: "Ports",
-        type: "number",
-        unit: "ports",
-        scope: "product",
-        required: true,
-        searchable: false,
-        filterable: false,
-        comparable: true,
-      },
-      {
-        key: "colour",
-        label: "Colour",
-        type: "text",
-        scope: "variant",
-        required: false,
-        searchable: false,
-        filterable: false,
-        comparable: true,
-      },
-    ],
-  },
+  groups: [
+    {
+      id: "template",
+      key: "switch",
+      name: "Switch",
+      version: 1,
+      source: "admin",
+      archived: false,
+      category_ids: [],
+      description: "",
+      fields: [
+        {
+          key: "ports",
+          label: "Ports",
+          type: "number",
+          unit: "ports",
+          scope: "product",
+          required: true,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+        {
+          key: "colour",
+          label: "Colour",
+          type: "text",
+          scope: "variant",
+          required: false,
+          searchable: false,
+          filterable: false,
+          comparable: true,
+        },
+      ],
+    },
+  ],
   values: { ports: 0 },
   variants: [
     {
@@ -119,10 +121,10 @@ beforeEach(() => {
     version: "product_v2",
     values: { ports: 24 },
   })
-  mocks.assignTemplate.mockResolvedValue({
+  mocks.assignGroups.mockResolvedValue({
     ...view,
     version: "product_v2",
-    template: { ...view.template!, version: 2 },
+    groups: [{ ...view.groups[0]!, version: 2 }],
   })
   mocks.prompt.mockResolvedValue(true)
 })
@@ -165,7 +167,7 @@ test("variant editor updates only the selected variant and preserves product sco
     await screen.findByRole("region", { name: "Variant specifications" })
   ).toHaveTextContent("White")
   expect(
-    screen.queryByRole("button", { name: "Change template" })
+    screen.queryByRole("button", { name: "Manage specification groups" })
   ).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "Edit" }))
   await user.clear(screen.getByLabelText("Colour"))
@@ -184,23 +186,23 @@ test("variant editor updates only the selected variant and preserves product sco
 
 test("template assignment is explicit and uses an immutable version", async () => {
   const user = userEvent.setup()
-  mocks.product.mockResolvedValue({ ...view, template: null, values: {} })
+  mocks.product.mockResolvedValue({ ...view, groups: [], values: {} })
   mount()
-  expect(
-    await screen.findByText("No specification template")
-  ).toBeInTheDocument()
-  await user.click(screen.getByRole("button", { name: "Assign template" }))
-  expect(screen.getByRole("button", { name: "Apply template" })).toBeDisabled()
+  expect(await screen.findByText("No specification groups")).toBeInTheDocument()
   await user.click(
-    screen.getByRole("combobox", { name: "Specification template" })
+    screen.getByRole("button", { name: "Manage specification groups" })
+  )
+  expect(screen.getByRole("button", { name: "Save groups" })).toBeEnabled()
+  await user.click(
+    screen.getByRole("combobox", { name: "Specification groups" })
   )
   await user.click(screen.getByRole("option", { name: "Switch · v2" }))
-  await user.click(screen.getByRole("button", { name: "Apply template" }))
+  await user.keyboard("{Escape}")
+  await user.click(screen.getByRole("button", { name: "Save groups" }))
   await waitFor(() =>
-    expect(mocks.assignTemplate).toHaveBeenCalledWith("product", {
+    expect(mocks.assignGroups).toHaveBeenCalledWith("product", {
       version: "product_v1",
-      template_id: "template",
-      template_version: 2,
+      groups: [{ template_id: "template", template_version: 2 }],
     })
   )
   expect(mocks.prompt).not.toHaveBeenCalled()
@@ -210,7 +212,7 @@ test("category recommendations come from the server and leave other templates av
   const user = userEvent.setup()
   mocks.product.mockResolvedValue({
     ...view,
-    template: null,
+    groups: [],
     values: {},
     templates: [
       { ...view.templates[0], recommended: true, category_ids: [] },
@@ -226,55 +228,53 @@ test("category recommendations come from the server and leave other templates av
   })
   mount()
   await user.click(
-    await screen.findByRole("button", { name: "Assign template" })
+    await screen.findByRole("button", { name: "Manage specification groups" })
   )
   expect(
-    screen.getByText(/Recommended templates match this product/)
+    screen.getByText(/Recommended groups match this product/)
   ).toBeInTheDocument()
-  expect(mocks.assignTemplate).not.toHaveBeenCalled()
+  expect(mocks.assignGroups).not.toHaveBeenCalled()
   await user.click(
-    screen.getByRole("combobox", { name: "Specification template" })
+    screen.getByRole("combobox", { name: "Specification groups" })
   )
   expect(
     screen.getByRole("option", { name: "Switch · v2 · Recommended" })
   ).toBeInTheDocument()
   await user.click(screen.getByRole("option", { name: "General device · v1" }))
-  expect(mocks.assignTemplate).not.toHaveBeenCalled()
-  await user.click(screen.getByRole("button", { name: "Apply template" }))
+  expect(mocks.assignGroups).not.toHaveBeenCalled()
+  await user.keyboard("{Escape}")
+  await user.click(screen.getByRole("button", { name: "Save groups" }))
   await waitFor(() =>
-    expect(mocks.assignTemplate).toHaveBeenCalledWith("product", {
+    expect(mocks.assignGroups).toHaveBeenCalledWith("product", {
       version: "product_v1",
-      template_id: "alternative",
-      template_version: 1,
+      groups: [{ template_id: "alternative", template_version: 1 }],
     })
   )
 })
 
-test("adopting a new version requires confirmation and stale assignment errors support refresh", async () => {
+test("removing groups requires confirmation and stale assignment errors support refresh", async () => {
   const user = userEvent.setup()
   mount()
-  const adopt = await screen.findByRole("button", {
-    name: "Adopt latest version",
-  })
+  await user.click(
+    await screen.findByRole("button", { name: "Manage specification groups" })
+  )
+  await user.click(
+    screen.getByRole("combobox", { name: "Specification groups" })
+  )
+  await user.click(screen.getByRole("option", { name: "Switch · v2" }))
+  await user.keyboard("{Escape}")
   mocks.prompt.mockResolvedValueOnce(false)
-  await user.click(adopt)
-  expect(mocks.assignTemplate).not.toHaveBeenCalled()
-  mocks.assignTemplate.mockRejectedValueOnce({ status: 409 })
-  await user.click(adopt)
+  await user.keyboard("{Escape}")
+  await user.click(screen.getByRole("button", { name: "Save groups" }))
+  expect(mocks.assignGroups).not.toHaveBeenCalled()
+  mocks.assignGroups.mockRejectedValueOnce({ status: 409 })
+  await user.keyboard("{Escape}")
+  await user.click(screen.getByRole("button", { name: "Save groups" }))
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Your edits are preserved"
   )
   await user.click(screen.getByRole("button", { name: "Reload" }))
   await waitFor(() => expect(mocks.product).toHaveBeenCalledTimes(2))
-  await user.click(adopt)
-  await waitFor(() =>
-    expect(mocks.assignTemplate).toHaveBeenLastCalledWith("product", {
-      version: "product_v1",
-      template_id: "template",
-      template_version: 2,
-    })
-  )
-  expect(await screen.findByText("Switch · Version 2")).toBeInTheDocument()
 })
 
 test("stale value writes preserve edits, block blind resubmission and offer confirmed reload", async () => {
@@ -346,7 +346,7 @@ test("read-only, incomplete, no-scope and unavailable-variant states are clear",
   unmount()
   mocks.product.mockResolvedValue({
     ...view,
-    template: { ...view.template!, fields: [] },
+    groups: [{ ...view.groups[0]!, fields: [] }],
   })
   const next = mount()
   expect(await screen.findByText("No product fields")).toBeInTheDocument()
@@ -362,7 +362,7 @@ test("read-only, incomplete, no-scope and unavailable-variant states are clear",
   missing.unmount()
   mocks.product.mockResolvedValue({
     ...view,
-    template: { ...view.template!, fields: [] },
+    groups: [{ ...view.groups[0]!, fields: [] }],
   })
   const variant = mount("variant")
   expect(await screen.findByText("No variant fields")).toBeInTheDocument()
@@ -374,20 +374,20 @@ test("read-only, incomplete, no-scope and unavailable-variant states are clear",
 })
 
 test("unassigned variants explain product-level assignment and empty pickers remain actionable", async () => {
-  mocks.product.mockResolvedValue({ ...view, template: null, templates: [] })
+  mocks.product.mockResolvedValue({ ...view, groups: [], templates: [] })
   const { unmount } = mount("variant")
   expect(
-    await screen.findByText(/Assign a specification template on the product/)
+    await screen.findByText(/Add specification groups on the product/)
   ).toBeInTheDocument()
   unmount()
   mount()
   await userEvent.click(
-    await screen.findByRole("button", { name: "Assign template" })
+    await screen.findByRole("button", { name: "Manage specification groups" })
   )
-  expect(
-    screen.getByText(/No active templates are available/)
-  ).toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "Assign template" }))
+  expect(screen.getByText(/No active groups are available/)).toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Manage specification groups" })
+  )
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
 })
 
@@ -427,7 +427,7 @@ test("pending value submission prevents close and duplicate saves", async () => 
 
 test("pending template assignment prevents opening an editor with an outdated schema", async () => {
   let complete!: (value: ProductAttributes) => void
-  mocks.assignTemplate.mockImplementationOnce(
+  mocks.assignGroups.mockImplementationOnce(
     () =>
       new Promise<ProductAttributes>((resolve) => {
         complete = resolve
@@ -435,13 +435,16 @@ test("pending template assignment prevents opening an editor with an outdated sc
   )
   mount()
   await userEvent.click(
-    await screen.findByRole("button", { name: "Adopt latest version" })
+    await screen.findByRole("button", { name: "Manage specification groups" })
   )
+  await userEvent.click(screen.getByRole("button", { name: "Save groups" }))
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled()
   )
-  expect(screen.getByRole("button", { name: "Change template" })).toBeDisabled()
-  complete({ ...view, template: { ...view.template!, version: 2 } })
+  expect(
+    screen.getByRole("button", { name: "Manage specification groups" })
+  ).toBeDisabled()
+  complete({ ...view, groups: [{ ...view.groups[0]!, version: 2 }] })
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Edit" })).toBeEnabled()
   )
@@ -506,4 +509,72 @@ test("public product and variant widget contracts use supported zones and native
   fallback.unmount()
   mountVariant(undefined, "/plain")
   await waitFor(() => expect(mocks.product).toHaveBeenLastCalledWith(""))
+})
+
+test("one product displays and edits several reusable typed groups without JSON", async () => {
+  const power = {
+    ...view.groups[0],
+    id: "power",
+    key: "power",
+    name: "Power",
+    fields: [
+      {
+        ...view.groups[0].fields[0],
+        key: "power_w",
+        label: "Maximum power",
+        unit: "W",
+        help: "Device consumption, excluding PoE output",
+        required: false,
+      },
+    ],
+  }
+  const software = {
+    ...view.groups[0],
+    id: "software",
+    key: "software",
+    name: "Software",
+    fields: [
+      {
+        ...view.groups[0].fields[0],
+        key: "meshing",
+        label: "Wireless meshing",
+        type: "boolean" as const,
+        unit: undefined,
+        required: false,
+      },
+    ],
+  }
+  mocks.product.mockResolvedValue({
+    ...view,
+    groups: [view.groups[0], power, software],
+    values: { ports: 8, power_w: 9, meshing: false },
+  })
+  mount()
+  expect(
+    await screen.findByRole("heading", { name: "Power" })
+  ).toBeInTheDocument()
+  expect(screen.getByRole("heading", { name: "Software" })).toBeInTheDocument()
+  expect(screen.getByText("9 W")).toBeInTheDocument()
+  expect(screen.getByText("No")).toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+  expect(
+    screen.getByText("Device consumption, excluding PoE output")
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText("Maximum power")).toHaveAttribute(
+    "type",
+    "number"
+  )
+  expect(
+    screen.getByRole("combobox", { name: "Wireless meshing" })
+  ).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText("Maximum power"), {
+    target: { value: "10" },
+  })
+  await userEvent.click(screen.getByRole("button", { name: "Save" }))
+  await waitFor(() =>
+    expect(mocks.saveValues).toHaveBeenCalledWith("product", {
+      version: view.version,
+      values: { ports: 8, power_w: 10, meshing: false },
+    })
+  )
 })

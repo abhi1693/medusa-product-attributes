@@ -5,7 +5,7 @@
 [![MIT license](https://img.shields.io/github/license/abhi1693/medusa-product-attributes)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-abhi1693-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/abhi1693)
 
-Typed product specifications and versioned templates for Medusa v2. Define reusable fields, edit values in the native Admin, and keep a consistent data contract for storefront presentation, indexing and comparison.
+Typed product specifications composed from reusable groups for Medusa v2. Attach several groups to a product and edit their labelled fields with normal Admin controls.
 
 The plugin owns template definitions and immutable specification revisions linked to native Medusa Products and Variants. Your application supplies its categories, brands and authorization policy. Native metadata can be an optional derived export.
 
@@ -15,34 +15,26 @@ Development preview: the first release has not been published to npm. Use a revi
 
 ## Capabilities
 
-| Capability | Behavior |
-| --- | --- |
-| Typed specifications | Text, numbers with a declared unit and bounds, boolean values, single choice and multiple choices. |
-| Product and variant fields | Templates distinguish shared product data from sellable-configuration data. |
-| Native Admin editing | Settings pages manage templates; product and variant detail widgets expose specification editing. |
-| Stable schemas | Templates have stable keys and immutable versions. Existing products retain their assigned version until explicitly updated. |
-| Incremental authoring | Drafts can be incomplete. Publication validation reports missing or invalid required specifications. |
-| Application configuration | Declare templates in code or create them in Admin. Merchant-specific definitions remain outside the plugin. |
-| Extensible authorization | Use Medusa authentication with an application-supplied authorization callback. A particular RBAC package is not required. |
-| Storefront contract | Normalized typed values and search/filter/comparison flags support downstream integrations. Storefront UI and search indexing are separate work. |
+| Capability                 | Behavior                                                                                                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typed specifications       | Text, numbers with a declared unit and bounds, boolean values, single choice and multiple choices.                                                                |
+| Product and variant fields | Templates distinguish shared product data from sellable-configuration data.                                                                                       |
+| Native Admin editing       | Settings pages manage templates; product and variant detail widgets expose specification editing.                                                                 |
+| Stable schemas             | Templates have stable keys and immutable versions. Each assigned group pins its definition revision. Definition edits do not silently reinterpret product values. |
+| Incremental authoring      | Drafts can be incomplete. Publication validation reports missing or invalid required specifications.                                                              |
+| Application configuration  | Declare templates in code or create them in Admin. Merchant-specific definitions remain outside the plugin.                                                       |
+| Extensible authorization   | Use Medusa authentication with an application-supplied authorization callback. A particular RBAC package is not required.                                         |
+| Storefront contract        | Normalized typed values and search/filter/comparison flags support downstream integrations. Storefront UI and search indexing are separate work.                  |
 
 The [storefront filtering contract](docs/storefront-filtering.md) explains stable choice codes, numeric units, schema-version interpretation and variant grouping, together with the backend query/index work required before exposing filters or facet counts.
 
 ## Admin preview
 
-Manage reusable schemas from **Settings → Product attributes**, including their current version and source.
+Manage reusable schemas from **Settings → Specification groups**, including their current version and source.
 
-Widget placement uses Medusa's native **Customize page** layouts. Save a shared default or a personal arrangement, including placement beneath the native Attributes card.
+Each product can have several groups, such as Connectivity, Power and Software. A group is the reusable template; there is no second group/template hierarchy. Manage applicability on the product and edit numeric, choice and Yes/No fields in a grouped drawer. Blank values remain distinct from zero and No.
 
-![Product attributes settings with searchable, versioned templates](docs/assets/template-list.png)
-
-Edit specifications alongside native product information. Typed controls preserve units, multiple selections and the distinction between unset values, zero and No. Saved values appear in the [Specifications widget](docs/assets/product-specifications-card.png).
-
-![Native specification editor with text, numeric, boolean and multiple-choice fields](docs/assets/value-editor.png)
-
-Review products using earlier schema versions before explicitly adopting an update.
-
-![Template details showing a product pinned to an earlier schema version](docs/assets/template-impact.png)
+Native product/variant fields remain authoritative for physical and customs attributes. The application must declare its measurement-unit convention and map only verified facts; device and packed shipping measurements are different.
 
 ## Development
 
@@ -108,9 +100,31 @@ Include this CLI command after migrations in your application's migration servic
 
 An application's root dependency overrides are not inherited from this plugin. Review [dependency compatibility](docs/dependency-compatibility.md) when using the pinned Medusa baseline.
 
+## Product group contract
+
+Use the same reusable definition on multiple products. Product and variant values remain in one immutable product snapshot, with separate scopes and no implicit inheritance.
+
+```ts
+const assigned = await client.assignGroups(productId, {
+  version: current.version,
+  groups: [
+    { template_id: connectivity.id, template_version: connectivity.version },
+    { template_id: power.id, template_version: power.version },
+  ],
+})
+await client.saveValues(productId, {
+  version: assigned.version,
+  values: { port_count: 8, max_power_w: 9 },
+})
+```
+
+The Admin endpoint is `POST /admin/product-attributes/products/:id/groups`. Membership is a complete ordered list, limited to 30 groups. Repeated group IDs and duplicate field keys across groups are rejected. Each fact has one owning definition; do not create editable copies of native fields. Removing a group removes its fields from the current snapshot, preserving immutable history and unrelated values.
+
+The normalized product and Store responses expose `groups`, typed product `values` and current native `variants`. No serialized vendor sections or raw audit graph is exposed. The previous singular assignment endpoint/shape is removed. This undeployed schema targets a fresh database; no migration, reset or data conversion is run against an existing application's database automatically.
+
 ## Data and authorization boundaries
 
-Assign a template explicitly to a product. Category associations suggest suitable templates; they do not silently switch a product's schema. Schema changes create a new version. Archiving prevents new assignments while preserving existing versions and values.
+Assign several groups explicitly to a product. Category associations recommend groups; they do not silently change membership. Schema changes create a new version. Archiving prevents new assignments while preserving existing versions and values.
 
 The Store endpoint serves a complete current specification revision only for a native published product in the publishable key's sales channel. Native Product rollback cannot overwrite the module's specification values. Incomplete or ineligible records are withheld; the endpoint does not fall back to an older revision. The search/filter/comparison flags describe intended presentation and indexing; they are not confidentiality controls. Do not place private operational notes or secrets in storefront specification fields or metadata exports.
 

@@ -48,8 +48,16 @@ const pageSchema = z
 const assignmentSchema = z
   .object({
     version,
-    template_id: z.string().min(1).max(100),
-    template_version: z.number().int().min(1),
+    groups: z
+      .array(
+        z
+          .object({
+            template_id: z.string().min(1).max(100),
+            template_version: z.number().int().min(1),
+          })
+          .strict()
+      )
+      .max(30),
   })
   .strict()
 const valuesSchema = z
@@ -171,7 +179,7 @@ export async function getProduct(
     )
   )
 }
-export async function assignProduct(
+export async function assignProductGroups(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
@@ -252,11 +260,7 @@ export async function storeProduct(
   if (!links.length) return missing()
   try {
     const state = await productState(req.scope, req.params.id)
-    if (
-      state.product.status !== "published" ||
-      !state.template ||
-      !state.specification
-    )
+    if (state.product.status !== "published" || !state.specification)
       return missing()
     const snapshot = {
       values: state.specification.values,
@@ -265,15 +269,22 @@ export async function storeProduct(
         values: state.specification!.variants[variant.id] || {},
       })),
     }
-    if (productIssues(state.template, snapshot, true).length) return missing()
+    if (
+      productIssues(
+        { fields: state.groups.flatMap((group) => group.fields) },
+        snapshot,
+        true
+      ).length
+    )
+      return missing()
     const response: StoreProductAttributes = {
       product_id: state.product.id,
-      template: {
-        key: state.template.key,
-        name: state.template.name,
-        version: state.template.version,
-        fields: state.template.fields,
-      },
+      groups: state.groups.map((group) => ({
+        key: group.key,
+        name: group.name,
+        version: group.version,
+        fields: group.fields,
+      })),
       ...snapshot,
     }
     res.json(response)

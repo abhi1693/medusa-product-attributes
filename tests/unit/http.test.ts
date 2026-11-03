@@ -15,7 +15,7 @@ import middleware from "../../src/api/middlewares"
 import { templateAssignments } from "../../src/api/template-assignments"
 import {
   archiveTemplate,
-  assignProduct,
+  assignProductGroups,
   checkProduct,
   exportProductMetadata,
   getProduct,
@@ -77,7 +77,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     history: vi.fn().mockResolvedValue([revision]),
     save: vi.fn().mockResolvedValue(revision),
     archive: vi.fn().mockResolvedValue({ ...revision, archived: true }),
-    listAndCountProductSpecifications: vi.fn().mockResolvedValue([[], 0]),
+    assignments: vi.fn().mockResolvedValue([[], 0]),
   }
   const products = {
     retrieveProduct: vi.fn().mockResolvedValue({
@@ -119,12 +119,11 @@ beforeEach(() => {
   })
   workflows.productState.mockResolvedValue({
     namespace: "specifications",
-    template: revision,
+    groups: [revision],
     specification: {
       id: "pas_switch",
       product_id: "prod_switch",
-      template_id: revision.id,
-      template_version: 2,
+      groups: [{ template_id: revision.id, template_version: 2 }],
       version: 7,
       revision_id: "psr_current",
       values: { ports: 24 },
@@ -330,7 +329,7 @@ describe("template assignment impact", () => {
       params: { id: revision.id },
       query: { offset: "20", limit: "10", outdated: "true" },
     })
-    service.listAndCountProductSpecifications.mockResolvedValue([
+    service.assignments.mockResolvedValue([
       [
         {
           id: "specification_visible",
@@ -367,14 +366,12 @@ describe("template assignment impact", () => {
       ],
     })
     await templateAssignments(request, response)
-    expect(service.listAndCountProductSpecifications).toHaveBeenCalledWith(
-      { template_id: revision.id, linked: true, template_version: { $lt: 2 } },
-      {
-        skip: 20,
-        take: 10,
-        order: { id: "ASC" },
-        select: ["id", "product_id", "template_version"],
-      }
+    expect(service.assignments).toHaveBeenCalledWith(
+      revision.id,
+      2,
+      20,
+      10,
+      true
     )
     expect(query.graph).toHaveBeenCalledWith({
       entity: "product",
@@ -413,14 +410,12 @@ describe("template assignment impact", () => {
       params: { id: revision.id },
     })
     await templateAssignments(request, response)
-    expect(service.listAndCountProductSpecifications).toHaveBeenCalledWith(
-      { template_id: revision.id, linked: true },
-      {
-        skip: 0,
-        take: 20,
-        order: { id: "ASC" },
-        select: ["id", "product_id", "template_version"],
-      }
+    expect(service.assignments).toHaveBeenCalledWith(
+      revision.id,
+      2,
+      0,
+      20,
+      false
     )
     expect(response.json).toHaveBeenCalledWith({
       assignments: [],
@@ -429,7 +424,7 @@ describe("template assignment impact", () => {
       offset: 0,
       limit: 20,
     })
-    service.listAndCountProductSpecifications.mockResolvedValue([
+    service.assignments.mockResolvedValue([
       [
         {
           id: "specification_denied",
@@ -488,7 +483,7 @@ describe("template assignment impact", () => {
     await expect(templateAssignments(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.FORBIDDEN,
     })
-    expect(service.listAndCountProductSpecifications).not.toHaveBeenCalled()
+    expect(service.assignments).not.toHaveBeenCalled()
     expect(response.json).not.toHaveBeenCalled()
   })
 
@@ -502,7 +497,7 @@ describe("template assignment impact", () => {
     )
     service.revision.mockRejectedValueOnce(missing)
     await expect(templateAssignments(request, response)).rejects.toBe(missing)
-    service.listAndCountProductSpecifications.mockResolvedValue([
+    service.assignments.mockResolvedValue([
       [
         {
           id: "specification_visible",
@@ -550,7 +545,7 @@ describe("Admin product endpoints", () => {
       true
     )
     expect(response.json).toHaveBeenLastCalledWith({ validation: [] })
-    await expect(assignProduct(request, response)).rejects.toMatchObject({
+    await expect(assignProductGroups(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.FORBIDDEN,
     })
     expect(workflows.mutateProductAttributes).not.toHaveBeenCalled()
@@ -560,11 +555,10 @@ describe("Admin product endpoints", () => {
     const { request, response } = fixture({
       body: {
         version: "2026-10-30T00:00:00.000Z:7",
-        template_id: revision.id,
-        template_version: 2,
+        groups: [{ template_id: revision.id, template_version: 2 }],
       },
     })
-    await assignProduct(request, response)
+    await assignProductGroups(request, response)
     expect(workflows.mutateProductAttributes).toHaveBeenCalledWith(
       request.scope,
       {
@@ -608,13 +602,14 @@ describe("Admin product endpoints", () => {
       { version: "stamp", template_id: "tpl", template_version: 0 },
       {
         version: "stamp",
-        template_id: "tpl",
-        template_version: 1,
+        groups: [{ template_id: "tpl", template_version: 1 }],
         force: true,
       },
     ]) {
       request.body = body
-      await expect(assignProduct(request, response)).rejects.toMatchObject({
+      await expect(
+        assignProductGroups(request, response)
+      ).rejects.toMatchObject({
         type: MedusaError.Types.INVALID_DATA,
       })
     }
@@ -716,7 +711,7 @@ describe("Store visibility boundary", () => {
     const state = workflows.productState.mock.results[0].value
     const snapshot = await state
     expect(workflows.productIssues).toHaveBeenCalledWith(
-      revision,
+      { fields: revision.fields },
       {
         values: { ports: 24 },
         variants: [
@@ -733,12 +728,14 @@ describe("Store visibility boundary", () => {
     })
     expect(response.json).toHaveBeenCalledWith({
       product_id: "prod_switch",
-      template: {
-        key: revision.key,
-        name: revision.name,
-        version: revision.version,
-        fields: revision.fields,
-      },
+      groups: [
+        {
+          key: revision.key,
+          name: revision.name,
+          version: revision.version,
+          fields: revision.fields,
+        },
+      ],
       values: { ports: 24 },
       variants: [
         { id: "variant_24", values: { ports: 24 } },
@@ -796,14 +793,14 @@ describe("Store visibility boundary", () => {
     })
     workflows.productState.mockResolvedValueOnce({
       product: { id: "prod_switch", status: "published" },
-      template: null,
+      groups: [],
     })
     await expect(call(request, response)).rejects.toMatchObject({
       type: MedusaError.Types.NOT_FOUND,
     })
     workflows.productState.mockResolvedValueOnce({
       product: { id: "prod_switch", status: "published" },
-      template: revision,
+      groups: [revision],
       specification: null,
     })
     await expect(call(request, response)).rejects.toMatchObject({
@@ -844,7 +841,7 @@ describe("Store visibility boundary", () => {
     workflows.productState.mockClear()
     workflows.productState.mockResolvedValueOnce({
       product: { id: "prod_switch", status: "draft" },
-      template: revision,
+      groups: [revision],
       specification: {
         revision_id: "psr_current",
         values: { ports: 99 },
@@ -976,7 +973,7 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
   const product =
     await import("../../src/api/admin/product-attributes/products/[id]/route.js")
   const assignment =
-    await import("../../src/api/admin/product-attributes/products/[id]/assignment/route.js")
+    await import("../../src/api/admin/product-attributes/products/[id]/groups/route.js")
   const values =
     await import("../../src/api/admin/product-attributes/products/[id]/values/route.js")
   const validation =
@@ -993,7 +990,7 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
   expect(template.POST).toBe(saveTemplate)
   expect(archive.POST).toBe(archiveTemplate)
   expect(product.GET).toBe(getProduct)
-  expect(assignment.POST).toBe(assignProduct)
+  expect(assignment.POST).toBe(assignProductGroups)
   expect(values.POST).toBe(saveProductValues)
   expect(validation.POST).toBe(checkProduct)
   expect(store.GET).toBe(storeProduct)

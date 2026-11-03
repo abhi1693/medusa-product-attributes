@@ -2,7 +2,7 @@ import type {
   ProductAttributes,
   ProductValuesInput,
   StoreProductAttributes,
-  TemplateAssignmentInput,
+  GroupAssignmentInput,
   TemplateInput,
   TemplateListResponse,
   TemplateResponse,
@@ -69,8 +69,8 @@ export const createProductAttributesClient = (
       transport.fetch<StoreProductAttributes>(
         `/store/products/${encodeURIComponent(id)}/attributes`
       ),
-    assignTemplate: (id: string, body: TemplateAssignmentInput) =>
-      transport.fetch<ProductAttributes>(`${productPath(id)}/assignment`, {
+    assignGroups: (id: string, body: GroupAssignmentInput) =>
+      transport.fetch<ProductAttributes>(`${productPath(id)}/groups`, {
         method: "POST",
         body,
       }),

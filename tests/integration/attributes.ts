@@ -138,8 +138,7 @@ export default async function integration({ container }: ExecArgs) {
       product_id: productId,
       assignment: {
         version: view.version,
-        template_id: template.id,
-        template_version: 1,
+        groups: [{ template_id: template.id, template_version: 1 }],
       },
     },
     true,
@@ -319,8 +318,7 @@ export default async function integration({ container }: ExecArgs) {
           product_id: otherId,
           assignment: {
             version: "unassigned",
-            template_id: template.id,
-            template_version: 1,
+            groups: [{ template_id: template.id, template_version: 1 }],
           },
         }),
       /Injected specification link failure/
@@ -347,11 +345,10 @@ export default async function integration({ container }: ExecArgs) {
     product_id: otherId,
     assignment: {
       version: "unassigned",
-      template_id: template.id,
-      template_version: 1,
+      groups: [{ template_id: template.id, template_version: 1 }],
     },
   })
-  assert.equal(other.template!.id, template.id)
+  assert.equal(other.groups[0]!.id, template.id)
   const transactionBefore = (await service.specification(productId))!
   const historyBefore = (
     await service.listAndCountProductSpecificationRevisions({
@@ -362,8 +359,7 @@ export default async function integration({ container }: ExecArgs) {
     () =>
       service.writeSpecification({
         product_id: productId,
-        template_id: template.id,
-        template_version: 1,
+        groups: [{ template_id: template.id, template_version: 1 }],
         expected_version: transactionBefore.version,
         complete: false,
         values: { model: "Must roll back", managed: false },
@@ -591,18 +587,16 @@ export default async function integration({ container }: ExecArgs) {
   )
   assert.equal(revision.version, 2)
   assert.equal(
-    (await productView(container, productId, true)).template!.version,
+    (await productView(container, productId, true)).groups[0]!.version,
     1
   )
   assert.equal((await service.revision(template.id, 1)).name, "Hardware")
-  const [outdated, count] = await service.listAndCountProductSpecifications(
-    { template_id: template.id, linked: true, template_version: { $lt: 2 } },
-    {
-      skip: 0,
-      take: 25,
-      order: { id: "ASC" },
-      select: ["id", "product_id", "template_version"],
-    }
+  const [outdated, count] = await service.assignments(
+    template.id,
+    2,
+    0,
+    25,
+    true
   )
   assert.equal(count, 2)
   assert.ok(outdated.some((item) => item.product_id === productId))
@@ -640,25 +634,15 @@ export default async function integration({ container }: ExecArgs) {
     product_id: productId,
     assignment: {
       version: current.version,
-      template_id: template.id,
-      template_version: 2,
+      groups: [{ template_id: template.id, template_version: 2 }],
     },
   })
-  assert.equal(adopted.template!.version, 2)
+  assert.equal(adopted.groups[0]!.version, 2)
   assert.equal(adopted.variants[0].values.ports, 0)
-  assert.equal(
-    (
-      await service.listAndCountProductSpecifications({
-        template_id: template.id,
-        linked: true,
-        template_version: { $lt: 2 },
-      })
-    )[1],
-    1
-  )
+  assert.equal((await service.assignments(template.id, 2, 0, 25, true))[1], 1)
   await service.archive(template.id, 2)
   assert.equal(
-    (await productView(container, productId, true)).template!.archived,
+    (await productView(container, productId, true)).groups[0]!.archived,
     true
   )
   assert.deepEqual(await validateProduct(container, productId, true), [])
@@ -849,8 +833,7 @@ export async function verifyAtomicInitialization(
     product_id: product.id,
     assignment: {
       version: before.version,
-      template_id: template.id,
-      template_version: 1,
+      groups: [{ template_id: template.id, template_version: 1 }],
     },
     values: {
       version: before.version,

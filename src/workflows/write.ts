@@ -24,7 +24,7 @@ import { conflict } from "../modules/product-attributes/service"
 import type {
   AttributeValues,
   ProductValuesInput,
-  TemplateAssignmentInput,
+  GroupAssignmentInput,
   SpecificationWriteInput,
   SpecificationWriteReceipt,
 } from "../types"
@@ -38,7 +38,7 @@ import {
 } from "./read"
 
 export type AttributesMutation = { product_id: string; actor_id?: string } & (
-  | { assignment: TemplateAssignmentInput; values?: ProductValuesInput }
+  | { assignment: GroupAssignmentInput; values?: ProductValuesInput }
   | { assignment?: never; values: ProductValuesInput }
 )
 
@@ -50,7 +50,7 @@ export async function prepareAttributesMutation(
     product,
     service,
     specification,
-    template: previous,
+    groups: previous,
   } = await productState(container, input.product_id)
   const currentVersion = specificationVersion(specification)
   if (
@@ -58,21 +58,57 @@ export async function prepareAttributesMutation(
     (input.values && input.values.version !== currentVersion)
   )
     conflict()
-  const template = input.assignment
-    ? await service.revision(
-        input.assignment.template_id,
-        input.assignment.template_version
+  if (!input.assignment && !specification)
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Assign specification groups before editing values"
+    )
+  const assignments = input.assignment
+    ? input.assignment.groups
+    : specification!.groups
+  if (
+    assignments.length > 30 ||
+    new Set(assignments.map((group) => group.template_id)).size !==
+      assignments.length
+  )
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Choose each specification group only once (maximum 30)"
+    )
+  const groups = input.assignment
+    ? await Promise.all(
+        assignments.map((group) =>
+          service.revision(group.template_id, group.template_version)
+        )
       )
     : previous
-  if (!template)
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      "Assign a template before editing specifications"
+  if (
+    input.assignment &&
+    groups.some(
+      (group) =>
+        group.archived &&
+        !specification?.groups.some(
+          (old) =>
+            old.template_id === group.id &&
+            old.template_version === group.version
+        )
     )
-  if (input.assignment && template.archived)
+  )
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Archived templates cannot be assigned"
+      "Archived groups cannot be assigned"
+    )
+  const fields = groups.flatMap((group) => group.fields)
+  if (new Set(fields.map((field) => field.key)).size !== fields.length)
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Groups contain duplicate field keys; each fact must have one owning group"
+    )
+  const retained = (values: AttributeValues) =>
+    Object.fromEntries(
+      Object.entries(values).filter(([key]) =>
+        fields.some((field) => field.key === key)
+      )
     )
   const patches = input.values?.variants || []
   if (new Set(patches.map((patch) => patch.id)).size !== patches.length)
@@ -86,7 +122,7 @@ export async function prepareAttributesMutation(
     if (patch && patch.version !== specificationVersion(specification))
       conflict()
     variants[variant.id] = mergeValues(
-      specification?.variants[variant.id] || {},
+      retained(specification?.variants[variant.id] || {}),
       patch?.values || {}
     )
   }
@@ -96,12 +132,12 @@ export async function prepareAttributesMutation(
       "A variant does not belong to this product"
     )
   const values = mergeValues(
-    specification?.values || {},
+    retained(specification?.values || {}),
     input.values?.values || {}
   )
   const complete = product.status === "published"
   const issues = productIssues(
-    template,
+    { fields },
     {
       values,
       variants: Object.entries(variants).map(([id, values]) => ({
@@ -118,8 +154,7 @@ export async function prepareAttributesMutation(
     )
   return new StepResponse<SpecificationWriteInput>({
     product_id: product.id,
-    template_id: template.id,
-    template_version: template.version,
+    groups: assignments,
     expected_version: specification?.version || 0,
     complete,
     values,
@@ -220,12 +255,13 @@ export async function confirmSpecification(
   })
   const service =
     container.resolve<ProductAttributesService>(PRODUCT_ATTRIBUTES)
-  const template = await service.revision(
-    input.template_id,
-    input.template_version
+  const groups = await Promise.all(
+    input.groups.map((group) =>
+      service.revision(group.template_id, group.template_version)
+    )
   )
   const issues = productIssues(
-    template,
+    { fields: groups.flatMap((group) => group.fields) },
     specificationSnapshot(product, input),
     product.status === "published"
   )
@@ -283,17 +319,16 @@ export async function exportProductAttributesMetadata(
   version: string
 ) {
   const state = await productState(container, productId)
-  if (!state.specification || !state.template)
+  if (!state.specification)
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Assign a template before exporting specifications"
+      "Assign specification groups before exporting specifications"
     )
   if (specificationVersion(state.specification) !== version) conflict()
   const source = state.specification
   const projection = {
     revision_id: source.revision_id,
-    template_id: source.template_id,
-    template_version: source.template_version,
+    groups: source.groups,
     values: source.values,
   }
   await updateProductsWorkflow(container).run({

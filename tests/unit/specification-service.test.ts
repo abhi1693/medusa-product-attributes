@@ -43,8 +43,7 @@ const template: TemplateRevision = {
 const specification: OwnedSpecification = {
   id: "pspec_switch",
   product_id: "prod_switch",
-  template_id: template.id,
-  template_version: 3,
+  groups: [{ template_id: template.id, template_version: 3 }],
   version: 7,
   revision_id: "psrev_seven",
   values: { ports: 24 },
@@ -55,8 +54,7 @@ const input = (
   changes: Partial<SpecificationWriteInput> = {}
 ): SpecificationWriteInput => ({
   product_id: "prod_switch",
-  template_id: template.id,
-  template_version: 3,
+  groups: [{ template_id: template.id, template_version: 3 }],
   expected_version: 7,
   values: { ports: 24 },
   variants: { variant_live: { voltage: 0 } },
@@ -111,8 +109,7 @@ describe("owned specification snapshots", () => {
     expect(receipt.after).toEqual({
       id: expect.stringMatching(/^pspec_/),
       product_id: requested.product_id,
-      template_id: template.id,
-      template_version: 3,
+      groups: [{ template_id: template.id, template_version: 3 }],
       version: 1,
       revision_id: expect.stringMatching(/^psrev_/),
       values: requested.values,
@@ -124,19 +121,16 @@ describe("owned specification snapshots", () => {
     ])
     expect(h.execute.mock.calls[0][0]).toContain("pg_advisory_xact_lock")
     const written = h.execute.mock.calls[2][1]
-    expect(written.slice(0, 5)).toEqual([
+    expect(written.slice(0, 4)).toEqual([
       receipt.after.revision_id,
       receipt.after.id,
-      template.id,
-      3,
+      JSON.stringify([{ template_id: template.id, template_version: 3 }]),
       1,
     ])
-    expect(JSON.parse(written[5])).toEqual({ ports: 24 })
-    expect(JSON.parse(written[6])).toEqual({ variant_live: { voltage: 0 } })
-    expect(written[7]).toBe("user_editor")
+    expect(JSON.parse(written[4])).toEqual({ ports: 24 })
+    expect(JSON.parse(written[5])).toEqual({ variant_live: { voltage: 0 } })
+    expect(written[6]).toBe("user_editor")
     expect(h.execute.mock.calls[3][1]).toEqual([
-      template.id,
-      3,
       1,
       receipt.after.revision_id,
       receipt.after.id,
@@ -223,12 +217,18 @@ describe("owned specification snapshots", () => {
           input({ variants: {} }),
           retained.context
         )
-      ).after.template_version
+      ).after.groups[0].template_version
     ).toBe(3)
     for (const before of [
       null,
-      { ...specification, template_id: "other" },
-      { ...specification, template_version: 2 },
+      {
+        ...specification,
+        groups: [{ template_id: "other", template_version: 3 }],
+      },
+      {
+        ...specification,
+        groups: [{ template_id: template.id, template_version: 2 }],
+      },
     ]) {
       const denied = writable(before)
       vi.mocked(denied.service.revision).mockResolvedValue({
@@ -240,7 +240,7 @@ describe("owned specification snapshots", () => {
           input({ expected_version: before?.version || 0 }),
           denied.context
         )
-      ).rejects.toThrow("Archived templates cannot be assigned")
+      ).rejects.toThrow("Archived groups cannot be assigned")
     }
   })
 
@@ -301,18 +301,15 @@ describe("owned specification snapshots", () => {
     await h.service.restoreSpecification(receipt, h.context)
     const written = h.execute.mock.calls[1]
     expect(written[0]).toContain("'system:compensation'")
-    expect(written[1].slice(0, 5)).toEqual([
+    expect(written[1].slice(0, 4)).toEqual([
       "psrev_restore_psrev_eight",
       specification.id,
-      template.id,
-      3,
+      JSON.stringify([{ template_id: template.id, template_version: 3 }]),
       9,
     ])
-    expect(JSON.parse(written[1][5])).toEqual(specification.values)
-    expect(JSON.parse(written[1][6])).toEqual(specification.variants)
+    expect(JSON.parse(written[1][4])).toEqual(specification.values)
+    expect(JSON.parse(written[1][5])).toEqual(specification.variants)
     expect(h.execute.mock.calls[2][1]).toEqual([
-      template.id,
-      3,
       9,
       "psrev_restore_psrev_eight",
       specification.id,
@@ -362,4 +359,53 @@ describe("owned specification snapshots", () => {
       expect(stale.execute).toHaveBeenCalledTimes(1)
     }
   })
+})
+
+test("validates group composition at the owning service boundary and queries group usage", async () => {
+  const h = writable()
+  const group = { template_id: template.id, template_version: 3 }
+  await expect(
+    h.service.writeSpecification(input({ groups: [group, group] }), h.context)
+  ).rejects.toThrow("only once")
+  await expect(
+    h.service.writeSpecification(
+      input({
+        groups: Array.from({ length: 31 }, (_, i) => ({
+          template_id: String(i),
+          template_version: 1,
+        })),
+      }),
+      h.context
+    )
+  ).rejects.toThrow("maximum 30")
+  await expect(
+    h.service.writeSpecification(
+      input({ groups: [group, { ...group, template_id: "another" }] }),
+      h.context
+    )
+  ).rejects.toThrow("duplicate field")
+  expect(
+    (
+      await h.service.writeSpecification(
+        input({ groups: [], values: {}, variants: {} }),
+        h.context
+      )
+    ).after.groups
+  ).toEqual([])
+  const query = harness()
+  query.execute
+    .mockResolvedValueOnce([{ product_id: "p", template_version: 1 }])
+    .mockResolvedValueOnce([{ count: "1" }])
+  expect(
+    await query.service.assignments(template.id, 3, 0, 20, true, query.context)
+  ).toEqual([[{ product_id: "p", template_version: 1 }], 1])
+  expect(query.execute.mock.calls[0][1]).toEqual([template.id, 3, 0, 20])
+  query.execute
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([{ count: "0" }])
+  expect(
+    await query.service.assignments(template.id, 3, 20, 10, false, {
+      manager: query.manager,
+    } as any)
+  ).toEqual([[], 0])
 })

@@ -1,5 +1,4 @@
 import { model } from "@medusajs/framework/utils"
-import AttributeTemplate from "./template"
 import ProductSpecification from "./specification"
 
 export default model
@@ -8,10 +7,7 @@ export default model
     specification: model.belongsTo(() => ProductSpecification, {
       mappedBy: "revisions",
     }),
-    template: model.belongsTo(() => AttributeTemplate, {
-      mappedBy: "specification_revisions",
-    }),
-    template_version: model.number(),
+    groups: model.json(),
     version: model.number(),
     values: model.json(),
     variants: model.json(),

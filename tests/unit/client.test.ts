@@ -13,8 +13,7 @@ test("public client preserves supplied transport and encodes entity identifiers"
   const template = { key: "switch", name: "Switch", fields: [] }
   const assignment = {
     version: "stamp",
-    template_id: "template",
-    template_version: 2,
+    groups: [{ template_id: "template", template_version: 2 }],
   }
   const values = {
     version: "stamp",
@@ -39,7 +38,7 @@ test("public client preserves supplied transport and encodes entity identifiers"
   await client.archiveTemplate("template/type", 2)
   await client.product("product/type")
   await client.storeProduct("product/type")
-  await client.assignTemplate("product/type", assignment)
+  await client.assignGroups("product/type", assignment)
   await client.saveValues("product/type", values)
   await client.exportMetadata("product/type", "specification_revision_2")
   await client.validate("product/type")
@@ -70,7 +69,7 @@ test("public client preserves supplied transport and encodes entity identifiers"
     ["/admin/product-attributes/products/product%2Ftype"],
     ["/store/products/product%2Ftype/attributes"],
     [
-      "/admin/product-attributes/products/product%2Ftype/assignment",
+      "/admin/product-attributes/products/product%2Ftype/groups",
       { method: "POST", body: assignment },
     ],
     [
@@ -91,26 +90,28 @@ test("public client preserves supplied transport and encodes entity identifiers"
 test("the Store reader preserves the public typed response without wrapping it", async () => {
   const response: StoreProductAttributes = {
     product_id: "product",
-    template: {
-      key: "network_device",
-      name: "Network device",
-      version: 2,
-      fields: [
-        {
-          key: "ports",
-          label: "Ports",
-          scope: "product",
-          type: "number",
-          required: true,
-          unit: "ports",
-          min: 0,
-          max: 48,
-          searchable: true,
-          filterable: true,
-          comparable: true,
-        },
-      ],
-    },
+    groups: [
+      {
+        key: "network_device",
+        name: "Network device",
+        version: 2,
+        fields: [
+          {
+            key: "ports",
+            label: "Ports",
+            scope: "product",
+            type: "number",
+            required: true,
+            unit: "ports",
+            min: 0,
+            max: 48,
+            searchable: true,
+            filterable: true,
+            comparable: true,
+          },
+        ],
+      },
+    ],
     values: { ports: 0, poe: false },
     variants: [{ id: "variant", values: { colour: "White" } }],
   }

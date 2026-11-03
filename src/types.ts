@@ -7,6 +7,7 @@ export type AttributeOption = { value: string; label: string }
 export type AttributeField = {
   key: string
   label: string
+  help?: string
   type: AttributeType
   scope: "product" | "variant"
   required: boolean
@@ -53,7 +54,7 @@ export type ProductVariantAttributes = {
 }
 export type ProductAttributes = {
   product_id: string
-  template: TemplateRevision | null
+  groups: TemplateRevision[]
   assignment_version: number
   version: string
   values: AttributeValues
@@ -64,7 +65,7 @@ export type ProductAttributes = {
 }
 export type StoreProductAttributes = {
   product_id: string
-  template: Pick<TemplateRevision, "key" | "name" | "version" | "fields">
+  groups: Array<Pick<TemplateRevision, "key" | "name" | "version" | "fields">>
   values: AttributeValues
   variants: Array<{ id: string; values: AttributeValues }>
 }
@@ -86,17 +87,16 @@ export type ProductValuesInput = {
   values?: AttributeValues
   variants?: Array<{ id: string; version: string; values: AttributeValues }>
 }
-export type TemplateAssignmentInput = {
+export type GroupAssignmentInput = {
   version: string
-  template_id: string
-  template_version: number
+  groups: GroupAssignment[]
 }
+export type GroupAssignment = { template_id: string; template_version: number }
 export type OwnedSpecification = {
   linked: boolean
   id: string
   product_id: string
-  template_id: string
-  template_version: number
+  groups: GroupAssignment[]
   version: number
   revision_id: string
   values: AttributeValues
@@ -104,8 +104,7 @@ export type OwnedSpecification = {
 }
 export type SpecificationWriteInput = {
   product_id: string
-  template_id: string
-  template_version: number
+  groups: GroupAssignment[]
   expected_version: number
   complete: boolean
   values: AttributeValues
