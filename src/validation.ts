@@ -1,0 +1,127 @@
+import type {
+  AttributeField,
+  AttributeValues,
+  ValidationIssue,
+  GroupAssignment,
+  TemplateRevision,
+} from "./types"
+import { MedusaError } from "@medusajs/framework/utils"
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+export function mergeValues(
+  current: AttributeValues,
+  patch: AttributeValues
+): AttributeValues {
+  const merged = { ...current }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete merged[key]
+    else
+      Object.defineProperty(merged, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      })
+  }
+  return merged
+}
+
+export function validateValues(
+  fields: AttributeField[],
+  values: unknown,
+  scope: "product" | "variant",
+  complete = false,
+  prefix = "values"
+): ValidationIssue[] {
+  if (!isRecord(values))
+    return [{ path: prefix, code: "type", message: "Values must be an object" }]
+  const issues: ValidationIssue[] = []
+  const definitions = new Map(
+    fields
+      .filter((field) => field.scope === scope)
+      .map((field) => [field.key, field])
+  )
+  for (const key of Object.keys(values))
+    if (!definitions.has(key))
+      issues.push({
+        path: `${prefix}.${key}`,
+        code: "unknown",
+        message: "This attribute is not defined for this scope",
+      })
+  for (const [key, field] of definitions) {
+    const value = Object.hasOwn(values, key) ? values[key] : undefined
+    const missing =
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && !value.trim()) ||
+      (Array.isArray(value) && !value.length)
+    if (missing) {
+      if (complete && field.required)
+        issues.push({
+          path: `${prefix}.${key}`,
+          code: "required",
+          message: `${field.label} is required`,
+        })
+      continue
+    }
+    const path = `${prefix}.${key}`
+    const issue = (code: ValidationIssue["code"], message: string) =>
+      issues.push({ path, code, message })
+    if (field.type === "number") {
+      if (typeof value !== "number" || !Number.isFinite(value))
+        issue("type", "Enter a finite number in the declared unit")
+      else if (
+        (field.min !== undefined && value < field.min) ||
+        (field.max !== undefined && value > field.max)
+      )
+        issue("range", "The number is outside the allowed range")
+    } else if (field.type === "boolean") {
+      if (typeof value !== "boolean") issue("type", "Choose a boolean value")
+    } else if (field.type === "text") {
+      if (typeof value !== "string" || value.length > 2000)
+        issue("type", "Enter text of at most 2000 characters")
+    } else {
+      const allowed = new Set(field.options?.map((option) => option.value))
+      if (field.type === "single_select") {
+        if (typeof value !== "string" || !allowed.has(value))
+          issue("choice", "Choose an available option")
+      } else if (
+        !Array.isArray(value) ||
+        value.length > 100 ||
+        value.some(
+          (entry) => typeof entry !== "string" || !allowed.has(entry)
+        ) ||
+        new Set(value).size !== value.length
+      )
+        issue("choice", "Choose unique available options")
+    }
+  }
+  return issues
+}
+
+/** A small explicit selection, shared by Admin, workflows and Store validation. */
+export function applicableTemplate(
+  template: TemplateRevision,
+  assignment: GroupAssignment
+) {
+  const keys = assignment.field_keys
+  if (keys === undefined) return template
+  if (
+    !keys.length ||
+    keys.length > 100 ||
+    new Set(keys).size !== keys.length ||
+    keys.some((key) => !template.fields.some((field) => field.key === key))
+  )
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Choose unique fields defined by this template (at least one)"
+    )
+  return {
+    ...template,
+    field_keys: keys,
+    fields: template.fields.filter((field) => keys.includes(field.key)),
+  }
+}

@@ -1,0 +1,83 @@
+name: Publish to npm
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published tag. Run recovery from that same tag.
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: npm-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify immutable published source
+        id: source
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          source=$(git rev-parse "$RELEASE_TAG^{commit}")
+          test "$source" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$source" origin/master
+          jq -e --arg tag "$RELEASE_TAG" '.name == "@abhi1693/medusa-product-attributes" and ("v" + .version) == $tag' package.json
+          archive="abhi1693-medusa-product-attributes-${RELEASE_TAG#v}.tgz"
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName,targetCommitish,assets > "$RUNNER_TEMP/attributes-release.json"
+          jq -e --arg tag "$RELEASE_TAG" --arg sha "$source" \
+            '(.isDraft | not) and (.isPrerelease | not) and .tagName == $tag and .targetCommitish == $sha' "$RUNNER_TEMP/attributes-release.json"
+          for asset in "$archive" SHA256SUMS provenance.json; do
+            jq -e --arg asset "$asset" '[.assets[] | select(.name == $asset and .state == "uploaded")] | length == 1' "$RUNNER_TEMP/attributes-release.json"
+          done
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+      - name: Download and verify build provenance
+        env:
+          ARCHIVE: ${{ steps.source.outputs.archive }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/attributes-npm"
+          gh release download "$RELEASE_TAG" --pattern "$ARCHIVE" --pattern SHA256SUMS --pattern provenance.json --dir "$RUNNER_TEMP/attributes-npm"
+          gh attestation verify "$RUNNER_TEMP/attributes-npm/$ARCHIVE" \
+            --repo "$GH_REPO" --bundle "$RUNNER_TEMP/attributes-npm/provenance.json" \
+            --signer-workflow "$GH_REPO/.github/workflows/release.yml" \
+            --source-digest "$GITHUB_SHA" --signer-digest "$GITHUB_SHA" --deny-self-hosted-runners
+      - name: Build Docker tooling
+        run: docker compose build tooling
+      - name: Publish exact archive and await registry verification
+        env:
+          ARCHIVE: ${{ steps.source.outputs.archive }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > "$RUNNER_TEMP/attributes-npm/npmrc"
+          docker compose run --rm --no-deps -T --user 0:0 \
+            -v "$RUNNER_TEMP/attributes-npm:/release" \
+            -e RELEASE_TAG -e NODE_AUTH_TOKEN -e NPM_CONFIG_USERCONFIG=/release/npmrc \
+            -e GITHUB_ACTIONS -e GITHUB_REPOSITORY -e GITHUB_REPOSITORY_ID \
+            -e GITHUB_REPOSITORY_OWNER -e GITHUB_REPOSITORY_OWNER_ID \
+            -e GITHUB_SHA -e GITHUB_REF -e GITHUB_EVENT_NAME -e GITHUB_SERVER_URL \
+            -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e GITHUB_WORKFLOW_REF -e GITHUB_WORKFLOW_SHA \
+            -e RUNNER_ENVIRONMENT -e ACTIONS_ID_TOKEN_REQUEST_URL -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            tooling node scripts/publish-npm.mjs "/release/$ARCHIVE"

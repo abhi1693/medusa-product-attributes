@@ -1,0 +1,62 @@
+# Test services are available only when this file is selected explicitly.
+services:
+  checks:
+    image: medusa-product-attributes:checks
+    build:
+      context: .
+      target: tooling
+    profiles: [ci]
+    init: true
+    environment:
+      CI: "true"
+    command: ["bash"]
+  test-postgres:
+    image: postgres:17-alpine
+    profiles: [ci]
+    environment:
+      POSTGRES_USER: attributes_test
+      POSTGRES_PASSWORD: attributes_isolated_test_only
+      POSTGRES_DB: postgres
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [test]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attributes_test -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  test-redis:
+    image: redis:7-alpine
+    profiles: [ci]
+    networks: [test]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  test:
+    image: medusa-product-attributes:test
+    build:
+      context: .
+      target: testing
+    profiles: [ci]
+    init: true
+    shm_size: 1gb
+    network_mode: service:test-postgres
+    environment:
+      CI: "true"
+      NODE_ENV: test
+      MEDUSA_DISABLE_TELEMETRY: "true"
+      ATTRIBUTES_TEST_DATABASE_URL: postgres://attributes_test:attributes_isolated_test_only@127.0.0.1:5432/postgres
+      PRODUCT_ATTRIBUTES_TEST_DATABASE_URL: postgres://attributes_test:attributes_isolated_test_only@127.0.0.1:5432/postgres
+      REDIS_URL: redis://test-redis:6379
+    command: ["npm", "run", "ci:test"]
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+
+networks:
+  test:
+    internal: true

@@ -1,0 +1,54 @@
+name: CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      COMPOSE_PROJECT_NAME: attributes-ci-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build locked plugin and consuming application
+        run: docker compose -f compose.yaml -f compose.ci.yaml --profile ci build test
+      - name: Audit locked dependencies in Docker
+        run: docker compose --profile tools run --rm --no-deps -T -e CI=true tooling npm audit --include=dev --audit-level=high
+      - name: Validate in isolated Docker CI mode
+        run: >-
+          docker compose -f compose.yaml -f compose.ci.yaml --profile ci
+          run --name attributes-ci-tests -T test sh -ec
+          'npm run format:check && npm run typecheck && npm run ci:test && npm run ci:build'
+      - name: Collect reports
+        if: always()
+        run: |
+          if docker container inspect attributes-ci-tests >/dev/null 2>&1; then
+            docker cp attributes-ci-tests:/plugin/coverage ./coverage || true
+            docker cp attributes-ci-tests:/plugin/test-results ./test-results || true
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: attributes-validation
+          path: |
+            coverage/
+            test-results/
+          retention-days: 7
+      - name: Stop owned CI services
+        if: always()
+        run: |
+          docker rm -f attributes-ci-tests 2>/dev/null || true
+          docker compose -f compose.yaml -f compose.ci.yaml --profile ci down --volumes --remove-orphans
+  security:
+    uses: abhi1693/actions/.github/workflows/security.yml@v1
+    with:
+      npm-audit: false
