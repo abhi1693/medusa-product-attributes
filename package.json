@@ -133,7 +133,11 @@
     "product-attributes",
     "specifications",
     "templates",
-    "typescript"
+    "typescript",
+    "product-specifications",
+    "catalog",
+    "medusa-admin",
+    "ecommerce"
   ],
   "publishConfig": {
     "access": "public"
