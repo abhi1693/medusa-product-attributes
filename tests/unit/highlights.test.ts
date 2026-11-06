@@ -1,5 +1,8 @@
 import { expect, test } from "vitest"
-import { effectiveHighlightKeys } from "../../src/highlight-selection"
+import {
+  effectiveHighlightKeys,
+  resolvedHighlights,
+} from "../../src/highlight-selection"
 import { validateHighlightKeys } from "../../src/highlights"
 import type { AttributeField } from "../../src/types"
 const fields = Array.from({ length: 8 }, (_, i) => ({
@@ -41,4 +44,13 @@ test.each([
   expect(() => validateHighlightKeys(keys as any, fields)).toThrow(
     "Choose up to six"
   )
+})
+
+test("the public presentation resolves defaults, explicit order and empty settings on the backend", () => {
+  expect(resolvedHighlights(null, fields)).toEqual(fields.slice(0, 6))
+  expect(resolvedHighlights(["field_5", "field_1"], fields)).toEqual([
+    fields[5],
+    fields[1],
+  ])
+  expect(resolvedHighlights([], fields)).toEqual([])
 })

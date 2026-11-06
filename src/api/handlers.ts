@@ -17,7 +17,10 @@ import {
   productIssues,
   validateProduct,
 } from "../workflows/read"
-import { effectiveHighlightKeys } from "../highlight-selection"
+import {
+  effectiveHighlightKeys,
+  resolvedHighlights,
+} from "../highlight-selection"
 import type { StoreProductAttributes } from "../types"
 import { isRecord } from "../validation"
 import {
@@ -322,6 +325,10 @@ export async function storeProduct(
       return missing()
     const response: StoreProductAttributes = {
       product_id: state.product.id,
+      highlights: resolvedHighlights(
+        state.specification.highlight_keys,
+        state.groups.flatMap((group) => group.fields)
+      ),
       highlight_keys: effectiveHighlightKeys(
         state.specification.highlight_keys,
         state.groups.flatMap((group) => group.fields)

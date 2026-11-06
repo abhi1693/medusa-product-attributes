@@ -735,6 +735,7 @@ describe("Store visibility boundary", () => {
     expect(response.json).toHaveBeenCalledWith({
       product_id: "prod_switch",
       highlight_keys: ["ports"],
+      highlights: revision.fields,
       groups: [
         {
           key: revision.key,
@@ -1158,3 +1159,17 @@ test("exports the dedicated highlights route", async () => {
     ).POST
   ).toBe(saveProductHighlights)
 })
+
+test.each([[null], [[]], [["ports"]]])(
+  "public highlights resolves default/null separately from explicit none: %j",
+  async (selection) => {
+    const { request, response } = fixture()
+    const state = await workflows.productState()
+    state.specification.highlight_keys = selection
+    workflows.productState.mockResolvedValue(state)
+    await storeProduct(request as any, response as any)
+    expect(response.json.mock.calls[0][0].highlights).toEqual(
+      selection?.length === 0 ? [] : revision.fields
+    )
+  }
+)

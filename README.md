@@ -148,7 +148,9 @@ than six fields.
 explicitly register this command. The configured client exposes `saveHighlights`.
 The Admin product response includes stored `highlight_keys` and
 `effective_highlight_keys`; the existing public attributes endpoint includes the
-resolved ordered `highlight_keys` for storefront rendering. Publication and
+resolved ordered `highlight_keys` and `highlights` field definitions for storefront
+rendering. Default/legacy selection is resolved on the server; storefronts render
+that explicit result without choosing their own fallback. Publication and
 sales-channel eligibility checks continue to apply.
 
 The widget has the stable ID `product-attributes:storefront-highlights` in the

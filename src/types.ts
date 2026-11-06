@@ -71,6 +71,7 @@ export type ProductAttributes = {
   can_assign: boolean
 }
 export type StoreProductAttributes = {
+  highlights?: AttributeField[]
   highlight_keys?: string[]
   product_id: string
   groups: Array<Pick<TemplateRevision, "key" | "name" | "version" | "fields">>
