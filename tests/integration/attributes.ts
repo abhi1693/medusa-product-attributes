@@ -279,6 +279,66 @@ export default async function integration({ container }: ExecArgs) {
       .merchant_variant_key,
     "preserved"
   )
+  // Per-product presentation is persisted in the same atomic revision without
+  // changing the complete specification or variant values.
+  const originalValues = JSON.stringify([
+    view.values,
+    view.variants.map((v) => v.values),
+  ])
+  assert.equal(view.highlight_keys, null)
+  view = await mutateProductAttributes(
+    container,
+    {
+      product_id: productId,
+      highlights: { version: view.version, highlight_keys: ["ports", "model"] },
+    },
+    true,
+    "user_editor"
+  )
+  assert.deepEqual(
+    (await productView(container, productId, true)).highlight_keys,
+    ["ports", "model"]
+  )
+  assert.equal(
+    JSON.stringify([view.values, view.variants.map((v) => v.values)]),
+    originalValues
+  )
+  await rejects(
+    () =>
+      mutateProductAttributes(container, {
+        product_id: productId,
+        highlights: { version: "stale", highlight_keys: [] },
+      }),
+    /Reload/
+  )
+  await rejects(
+    () =>
+      mutateProductAttributes(container, {
+        product_id: productId,
+        highlights: { version: view.version, highlight_keys: ["unknown"] },
+      }),
+    /Choose up to six/
+  )
+  view = await mutateProductAttributes(
+    container,
+    {
+      product_id: productId,
+      highlights: { version: view.version, highlight_keys: [] },
+    },
+    true,
+    "user_editor"
+  )
+  assert.deepEqual((await service.specification(productId))!.highlight_keys, [])
+  view = await mutateProductAttributes(
+    container,
+    {
+      product_id: productId,
+      highlights: { version: view.version, highlight_keys: null },
+    },
+    true,
+    "user_editor"
+  )
+  assert.equal((await service.specification(productId))!.highlight_keys, null)
   const immutableBefore = await service.specification(productId)
   assert.equal(
     (

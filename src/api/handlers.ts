@@ -17,6 +17,7 @@ import {
   productIssues,
   validateProduct,
 } from "../workflows/read"
+import { effectiveHighlightKeys } from "../highlight-selection"
 import type { StoreProductAttributes } from "../types"
 import { isRecord } from "../validation"
 import {
@@ -75,6 +76,15 @@ const valuesSchema = z
       )
       .max(100)
       .optional(),
+  })
+  .strict()
+const highlightsSchema = z
+  .object({
+    version,
+    highlight_keys: z
+      .array(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/))
+      .max(6)
+      .nullable(),
   })
   .strict()
 const revisionSchema = z.object({ version: z.number().int().min(1) }).strict()
@@ -225,6 +235,26 @@ export async function saveProductValues(
     )
   )
 }
+export async function saveProductHighlights(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse
+) {
+  await authorize(req, { action: "values.read", product_id: req.params.id })
+  await authorize(req, { action: "values.write", product_id: req.params.id })
+  res.json(
+    await mutateProductAttributes(
+      req.scope,
+      {
+        product_id: req.params.id,
+        highlights: parse(highlightsSchema, req.body),
+      },
+      true,
+      req.auth_context.actor_id,
+      await allowed(req, { action: "templates.read" })
+    )
+  )
+}
+
 export async function checkProduct(
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
@@ -292,6 +322,10 @@ export async function storeProduct(
       return missing()
     const response: StoreProductAttributes = {
       product_id: state.product.id,
+      highlight_keys: effectiveHighlightKeys(
+        state.specification.highlight_keys,
+        state.groups.flatMap((group) => group.fields)
+      ),
       groups: state.groups.map((group) => ({
         key: group.key,
         name: group.name,

@@ -527,6 +527,22 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "json"
+        },
+        "highlight_keys": {
+          "name": "highlight_keys",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "json"
         }
       },
       "name": "product_specification_revision",

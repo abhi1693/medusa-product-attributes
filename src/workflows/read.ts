@@ -3,6 +3,7 @@ import type {
   MedusaContainer,
 } from "@medusajs/framework/types"
 import { Modules, MedusaError } from "@medusajs/framework/utils"
+import { effectiveHighlightKeys } from "../highlight-selection"
 import { PRODUCT_ATTRIBUTES } from "../constants"
 import type ProductAttributesService from "../modules/product-attributes/service"
 import type {
@@ -121,6 +122,11 @@ export async function productView(
   )
   return {
     product_id: product.id,
+    highlight_keys: specification?.highlight_keys ?? null,
+    effective_highlight_keys: effectiveHighlightKeys(
+      specification?.highlight_keys,
+      groups.flatMap((group) => group.fields)
+    ),
     groups,
     assignment_version: specification?.version || 0,
     version,

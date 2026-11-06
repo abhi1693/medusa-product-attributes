@@ -66,6 +66,7 @@ const access: AccessControlOptions = {
                 children: {
                   groups: commandProfile("values_write"),
                   values: commandProfile("values_write"),
+                  highlights: commandProfile("values_write"),
                   validate: commandProfile("values_read"),
                   export: commandProfile("values_export"),
                 },

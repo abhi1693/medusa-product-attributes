@@ -52,7 +52,13 @@ export type ProductVariantAttributes = {
   version: string
   values: AttributeValues
 }
+export type ProductHighlightsInput = {
+  version: string
+  highlight_keys: string[] | null
+}
 export type ProductAttributes = {
+  highlight_keys?: string[] | null
+  effective_highlight_keys?: string[]
   product_id: string
   groups: Array<TemplateRevision & { field_keys?: string[] }>
   assignment_version: number
@@ -65,6 +71,7 @@ export type ProductAttributes = {
   can_assign: boolean
 }
 export type StoreProductAttributes = {
+  highlight_keys?: string[]
   product_id: string
   groups: Array<Pick<TemplateRevision, "key" | "name" | "version" | "fields">>
   values: AttributeValues
@@ -99,6 +106,7 @@ export type GroupAssignment = {
   field_keys?: string[]
 }
 export type OwnedSpecification = {
+  highlight_keys?: string[] | null
   linked: boolean
   id: string
   product_id: string
@@ -109,6 +117,7 @@ export type OwnedSpecification = {
   variants: Record<string, AttributeValues>
 }
 export type SpecificationWriteInput = {
+  highlight_keys?: string[] | null
   product_id: string
   groups: GroupAssignment[]
   expected_version: number
