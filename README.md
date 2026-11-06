@@ -125,3 +125,36 @@ Checks cover unit/component behavior with 100% per-file coverage, package export
 ## License
 
 MIT © Abhimanyu Saharan.
+
+## Per-product storefront highlights
+
+A separate **Storefront highlights** widget on the product detail page selects
+and orders up to six attributes from that product's assigned schemas. It does
+not edit attribute values, full specifications or reusable templates. Variant
+fields continue to use the selected variant's saved value.
+
+The versioned product setting is `highlight_keys`: `null` uses the first six
+assigned fields in schema order, `[]` hides highlights, and an ordered array
+chooses specific fields. Existing products keep the default without a backfill.
+Selections are stored in immutable specification revisions with the existing
+atomic pointer, actor audit, concurrency checks and workflow compensation.
+Detaching fields removes them from an inherited selection without changing
+other selected fields. Custom writes reject duplicates, unknown keys and more
+than six fields.
+
+`POST /admin/product-attributes/products/:id/highlights` accepts
+`{ version, highlight_keys }` and requires the existing `values.read` and
+`values.write` grants. Consumers with path-based authorization profiles must
+explicitly register this command. The configured client exposes `saveHighlights`.
+The Admin product response includes stored `highlight_keys` and
+`effective_highlight_keys`; the existing public attributes endpoint includes the
+resolved ordered `highlight_keys` and `highlights` field definitions for storefront
+rendering. Default/legacy selection is resolved on the server; storefronts render
+that explicit result without choosing their own fallback. Publication and
+sales-channel eligibility checks continue to apply.
+
+The widget has the stable ID `product-attributes:storefront-highlights` in the
+public `product.details` zone. It supports defaults, empty selections, ordering,
+search, permission states, unsaved-change confirmation, and stale-save recovery.
+Apply the included additive migration through normal Medusa migrations before
+running the updated module. No catalog seed or template rewrite is required.

@@ -54,3 +54,30 @@ Verified against the pinned Medusa 2.22.2 host. Runtime configuration no longer 
 HTTP mutations require read and write grants, and assignment edits require global template-read access. Values-only readers retain assigned schema interpretation without access to the global catalog. Metadata export has an explicit application grant covering native metadata writes. Authorization callbacks grant only on literal true. Open Admin value and assignment drafts retain the schema and compare-and-swap base they were opened with; background query refresh cannot silently advance their token. Template adoption remains explicit and is checked against server-side typed/publication constraints.
 
 The pinned native `buildGenerateMigrationScript` uses a filesystem snapshot through `Migrations.ensureSnapshot`, rather than inspecting the live application database. Missing metadata causes a complete create migration to be generated again. The package therefore includes the generated module snapshot, verifies its exact bytes during build/packing, and asserts that native generation produces no additional migration. Fresh application migration, replay and real owning-service lifecycle checks validate the installed database separately. No earlier migration ID is rewritten.
+
+## Per-product storefront highlights — 2026-11-06
+
+Target: Medusa 2.22.2, UI 4.2.9, Query 5.64.2. Rechecked the public widget contract
+at https://docs.medusajs.com/learn/fundamentals/admin/widgets and the installed
+`defineWidgetConfig`, `Drawer`, `Checkbox`, `Button` and SDK client exports. The
+new widget uses its own stable ID in `product.details`, leaving the existing
+specification widget and template editors unchanged.
+
+A nullable JSON selection belongs to the module-owned immutable specification
+revision, alongside groups/values/variants. The existing public workflow owns
+native membership checks, locking, compare-and-swap, audit and compensation;
+all SQL remains inside this module's tables. The Admin command uses existing
+values read/write authorization, and the Store endpoint resolves order only
+after its existing native publication/channel/completeness checks. No metadata
+fallback or native Product schema change was introduced.
+
+Validation: Docker package build and packed export checks passed; native clean
+locked consuming installation passed. Unit/component suite: 178 tests across
+20 files with 100% per-file statements, branches, functions and lines. Isolated
+PostgreSQL integration passed, including migration replay and no additional
+migration from native schema generation, persistent custom/empty/reset settings,
+stale/unknown refusal, preserved product/variant values, transactional history,
+native rollback isolation and delete/restore lifecycle. A real consuming Admin
+save/reload and storefront read verified selection/order; public specification
+values were unchanged from their pre-save snapshot. Browser verification used
+the assistant in-app browser. No package release is included.

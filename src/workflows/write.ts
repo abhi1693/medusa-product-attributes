@@ -24,6 +24,7 @@ import { conflict } from "../modules/product-attributes/service"
 import type {
   AttributeValues,
   ProductValuesInput,
+  ProductHighlightsInput,
   GroupAssignmentInput,
   SpecificationWriteInput,
   SpecificationWriteReceipt,
@@ -37,9 +38,14 @@ import {
   specificationVersion,
 } from "./read"
 
-export type AttributesMutation = { product_id: string; actor_id?: string } & (
+export type AttributesMutation = {
+  product_id: string
+  actor_id?: string
+  highlights?: ProductHighlightsInput
+} & (
   | { assignment: GroupAssignmentInput; values?: ProductValuesInput }
   | { assignment?: never; values: ProductValuesInput }
+  | { assignment?: never; values?: never; highlights: ProductHighlightsInput }
 )
 
 export async function prepareAttributesMutation(
@@ -55,7 +61,8 @@ export async function prepareAttributesMutation(
   const currentVersion = specificationVersion(specification)
   if (
     (input.assignment && input.assignment.version !== currentVersion) ||
-    (input.values && input.values.version !== currentVersion)
+    (input.values && input.values.version !== currentVersion) ||
+    (input.highlights && input.highlights.version !== currentVersion)
   )
     conflict()
   if (!input.assignment && !specification)
@@ -156,6 +163,9 @@ export async function prepareAttributesMutation(
     )
   return new StepResponse<SpecificationWriteInput>({
     product_id: product.id,
+    ...(input.highlights
+      ? { highlight_keys: input.highlights.highlight_keys }
+      : {}),
     groups: assignments,
     expected_version: specification?.version || 0,
     complete,

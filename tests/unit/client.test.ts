@@ -131,3 +131,15 @@ test("the Store reader preserves the public typed response without wrapping it",
   fetch.mockRejectedValueOnce(unavailable)
   await expect(client.storeProduct("unpublished")).rejects.toBe(unavailable)
 })
+
+test("sends ordered per-product highlights through the configured client", async () => {
+  const fetch = vi.fn().mockResolvedValue({})
+  await createProductAttributesClient({ fetch }).saveHighlights("prod /id", {
+    version: "rev",
+    highlight_keys: ["ports"],
+  })
+  expect(fetch).toHaveBeenCalledWith(
+    "/admin/product-attributes/products/prod%20%2Fid/highlights",
+    { method: "POST", body: { version: "rev", highlight_keys: ["ports"] } }
+  )
+})
