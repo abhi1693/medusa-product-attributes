@@ -1168,8 +1168,10 @@ test.each([[null], [[]], [["ports"]]])(
     state.specification.highlight_keys = selection
     workflows.productState.mockResolvedValue(state)
     await storeProduct(request as any, response as any)
-    expect(response.json.mock.calls[0][0].highlights).toEqual(
-      selection?.length === 0 ? [] : revision.fields
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        highlights: selection?.length === 0 ? [] : revision.fields,
+      })
     )
   }
 )
