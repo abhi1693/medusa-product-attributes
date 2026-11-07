@@ -125,3 +125,9 @@ Checks cover unit/component behavior with 100% per-file coverage, package export
 ## License
 
 MIT © Abhimanyu Saharan.
+
+## Release preparation
+
+Release preparation and npm publication use the shared `abhi1693/actions@v1` workflows. Dispatch `release.yml` only after committing matching package/lockfile versions and `docs/releases/VERSION.md` notes. CI runs first; preparation builds and signs the exact archive and creates a draft with checksums and provenance. Publishing the stable GitHub release triggers `publish.yml`, which verifies and publishes that same archive using npm OIDC. Manual recovery accepts a published tag from `master`.
+
+Configure npm ownership and trusted publishing for `abhi1693/medusa-product-attributes`, workflow `publish.yml`, with no environment. The old registry-token fallback is removed. Existing releases signed by the former repository-local workflow cannot use the new shared publisher. Local Docker development still uses `pack:local`; package-specific browser, migration-snapshot and consumer checks remain local, while generic release, archive and registry plumbing resides in the shared actions repository. No package is published by ordinary CI.

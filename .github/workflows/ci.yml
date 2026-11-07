@@ -28,6 +28,17 @@ jobs:
           docker compose -f compose.yaml -f compose.ci.yaml --profile ci
           run --name attributes-ci-tests -T test sh -ec
           'npm run format:check && npm run typecheck && npm run ci:test && npm run ci:build'
+      - name: Load shared archive verifier
+        id: release-tools
+        uses: abhi1693/actions/.github/actions/npm-release@02c926a5d737bb3abca05788c5cea8a2b0b8767b # v1.1.1
+      - name: Verify actual release archive
+        env:
+          TOOLS: ${{ steps.release-tools.outputs.path }}
+        run: >-
+          docker compose -f compose.yaml -f compose.ci.yaml --profile ci
+          run --rm --no-deps -T -v "$TOOLS:/release-tools:ro"
+          -e PACKAGE_NAME=@abhi1693/medusa-product-attributes checks
+          sh -ec 'npm run build && node /release-tools/package.mjs --check-only'
       - name: Collect reports
         if: always()
         run: |

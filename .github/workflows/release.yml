@@ -3,84 +3,22 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Package version to prepare as a draft release.
+        description: Exact package version to prepare as a draft.
         type: string
         required: true
-        default: "0.0.1"
 permissions:
   contents: read
-concurrency:
-  group: prepare-release-${{ inputs.version }}
-  cancel-in-progress: false
 jobs:
   validate:
     uses: ./.github/workflows/ci.yml
-  package:
+  release:
     needs: validate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    uses: abhi1693/actions/.github/workflows/npm-release.yml@v1
     permissions:
       contents: write
       id-token: write
       attestations: write
-    env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Build tooling
-        run: docker compose build tooling
-      - name: Build exact release archive
-        id: package
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/attributes-release"
-          docker compose run --rm --no-deps -T --user 0:0 \
-            -e RELEASE_VERSION -e GITHUB_SHA -e RELEASE_OUTPUT_DIR=/release \
-            -e GITHUB_OUTPUT=/release/github-output \
-            -v "$RUNNER_TEMP/attributes-release:/release" tooling \
-            sh -ec 'git config --global --add safe.directory /plugin; npm run release:package'
-          sed "s|=/release/|=$RUNNER_TEMP/attributes-release/|" \
-            "$RUNNER_TEMP/attributes-release/github-output" >> "$GITHUB_OUTPUT"
-      - name: Attest archive
-        id: provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: ${{ steps.package.outputs.package-path }}
-      - name: Prepare draft without replacing published assets
-        env:
-          RELEASE_TAG: ${{ steps.package.outputs.tag }}
-          PACKAGE_PATH: ${{ steps.package.outputs.package-path }}
-          CHECKSUMS_PATH: ${{ steps.package.outputs.checksums-path }}
-          PROVENANCE_PATH: ${{ steps.provenance.outputs.bundle-path }}
-        run: |
-          set -euo pipefail
-          notes="docs/releases/$RELEASE_VERSION.md"
-          test -f "$notes"
-          git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}" > "$RUNNER_TEMP/attributes-tags"
-          if test -s "$RUNNER_TEMP/attributes-tags"; then
-            test "$(awk 'END {print $1}' "$RUNNER_TEMP/attributes-tags")" = "$GITHUB_SHA"
-          fi
-          cp "$PROVENANCE_PATH" "$RUNNER_TEMP/attributes-release/provenance.json"
-          existing=$(gh release list --limit 1000 --json tagName | jq --arg tag "$RELEASE_TAG" 'any(.[]; .tagName == $tag)')
-          if test "$existing" = true; then
-            gh release view "$RELEASE_TAG" --json isDraft,targetCommitish | \
-              jq -e --arg sha "$GITHUB_SHA" '.isDraft and .targetCommitish == $sha'
-            gh release upload "$RELEASE_TAG" "$PACKAGE_PATH" "$CHECKSUMS_PATH" "$RUNNER_TEMP/attributes-release/provenance.json" --clobber
-          else
-            gh release create "$RELEASE_TAG" "$PACKAGE_PATH" "$CHECKSUMS_PATH" "$RUNNER_TEMP/attributes-release/provenance.json" \
-              --draft --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file "$notes"
-          fi
-          mkdir -p "$RUNNER_TEMP/attributes-release-verify"
-          gh release download "$RELEASE_TAG" --pattern "$(basename "$PACKAGE_PATH")" --pattern SHA256SUMS --pattern provenance.json --dir "$RUNNER_TEMP/attributes-release-verify"
-          cmp "$CHECKSUMS_PATH" "$RUNNER_TEMP/attributes-release-verify/SHA256SUMS"
-          (cd "$RUNNER_TEMP/attributes-release-verify" && sha256sum -c SHA256SUMS)
-          gh attestation verify "$RUNNER_TEMP/attributes-release-verify/$(basename "$PACKAGE_PATH")" \
-            --repo "$GH_REPO" --bundle "$RUNNER_TEMP/attributes-release-verify/provenance.json" \
-            --signer-workflow "$GH_REPO/.github/workflows/release.yml" \
-            --source-digest "$GITHUB_SHA" --signer-digest "$GITHUB_SHA" --deny-self-hosted-runners
+    with:
+      operation: prepare
+      package-name: '@abhi1693/medusa-product-attributes'
+      version: ${{ inputs.version }}
