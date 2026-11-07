@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createRequire } from "node:module"
 import { access, readFile, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 
@@ -39,3 +40,10 @@ assert.equal(
   await readFile(new URL(snapshot, root), "utf8"),
   "Packaged migration snapshot differs from source"
 )
+
+const require = createRequire(import.meta.url)
+const commonjsClient = require(
+  new URL(pkg.exports["./client"].require, root).pathname
+)
+for (const name of Object.keys(client).filter((name) => name !== "default"))
+  assert.equal(typeof commonjsClient[name], typeof client[name], name)
