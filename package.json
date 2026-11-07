@@ -1,6 +1,6 @@
 {
   "name": "@abhi1693/medusa-product-attributes",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Typed product attributes, editable templates and immutable product/variant revisions for Medusa v2",
   "license": "MIT",
   "repository": {
@@ -70,7 +70,8 @@
     "test:e2e": "node scripts/test-browser.mjs",
     "ci:test": "npm run test:package && npm test && npm run test:integration && npm run test:e2e",
     "ci:build": "npm run build",
-    "pack:local": "npm run build && node scripts/package-local.mjs"
+    "pack:local": "npm run build && node scripts/package-local.mjs",
+    "host:install": "npm install --prefix tests/host --no-package-lock --no-audit --no-fund && mkdir -p tests/host/node_modules/@abhi1693/medusa-product-attributes && tar -xzf \"artifacts/abhi1693-medusa-product-attributes-$(node -p 'require(\"./package.json\").version').tgz\" --strip-components=1 -C tests/host/node_modules/@abhi1693/medusa-product-attributes"
   },
   "peerDependencies": {
     "@medusajs/dashboard": "^2.22.2",
