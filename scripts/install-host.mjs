@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdir, readFile, readdir, rm } from "node:fs/promises"
+import {
+  access,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
 const host = new URL("../tests/host/", import.meta.url)
@@ -9,6 +16,18 @@ assert.equal(
   pkg.name,
   "product-attributes-example",
   "Expected the isolated compatibility host"
+)
+
+const plugin = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8")
+)
+assert.equal(plugin.name, "@abhi1693/medusa-product-attributes")
+const archive = `${plugin.name.replace(/^@/, "").replace("/", "-")}-${plugin.version}.tgz`
+await access(new URL(`../artifacts/${archive}`, import.meta.url))
+pkg.dependencies[plugin.name] = `file:../../artifacts/${archive}`
+await writeFile(
+  new URL("package.json", host),
+  JSON.stringify(pkg, null, 2) + "\n"
 )
 
 // npm can reconstruct an old local-tar integrity from node_modules' hidden lock

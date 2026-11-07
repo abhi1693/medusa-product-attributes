@@ -61,7 +61,10 @@ try {
     )
   )
   assert.equal(installed.name, "@abhi1693/medusa-product-attributes")
-  assert.equal(installed.version, "0.0.1")
+  const plugin = JSON.parse(
+    await readFile(path.join(root, "package.json"), "utf8")
+  )
+  assert.equal(installed.version, plugin.version)
   await mkdir(path.dirname(script), { recursive: true })
   await copyFile(path.join(root, "tests/integration/attributes.ts"), script)
   await db.raw("create database ??", [name])
