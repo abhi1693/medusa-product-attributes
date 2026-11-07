@@ -44,7 +44,8 @@ services:
   host-dependencies:
     <<: *host
     restart: "no"
-    command: ["node", "/plugin/scripts/install-host.mjs"]
+    working_dir: /plugin
+    command: ["npm", "run", "host:install"]
     depends_on:
       plugin-build:
         condition: service_completed_successfully

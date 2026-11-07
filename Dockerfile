@@ -15,7 +15,7 @@ CMD ["bash"]
 FROM tooling AS application
 RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 npm ci --no-audit --no-fund
 RUN node scripts/package-local.mjs \
-    && node scripts/install-host.mjs
+    && npm run host:install
 
 FROM dependencies AS browsers
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
