@@ -49,6 +49,7 @@ const specification: OwnedSpecification = {
   values: { ports: 24 },
   variants: { variant_live: { voltage: 0 } },
   linked: true,
+  highlight_keys: null,
 }
 const input = (
   changes: Partial<SpecificationWriteInput> = {}
@@ -115,6 +116,7 @@ describe("owned specification snapshots", () => {
       values: requested.values,
       variants: requested.variants,
       linked: false,
+      highlight_keys: null,
     })
     expect(receipt.created_variants).toEqual([
       { id: expect.stringMatching(/^psvar_/), variant_id: "variant_live" },
@@ -408,4 +410,63 @@ test("validates group composition at the owning service boundary and queries gro
       manager: query.manager,
     } as any)
   ).toEqual([[], 0])
+})
+
+test("persists selected order without altering values, preserves it on value edits and supports explicit empty/reset", async () => {
+  for (const keys of [["voltage", "ports"], [], null]) {
+    const h = writable({ ...specification, highlight_keys: ["ports"] })
+    const receipt = await h.service.writeSpecification(
+      input({ highlight_keys: keys }),
+      h.context
+    )
+    expect(receipt.after.highlight_keys).toEqual(keys)
+    expect(receipt.after.values).toEqual(specification.values)
+    expect(receipt.after.variants).toEqual(specification.variants)
+    const insert = h.execute.mock.calls.find(([sql]) =>
+      sql.startsWith("insert into product_specification_revision")
+    )!
+    expect(insert[1][7]).toBe(keys === null ? null : JSON.stringify(keys))
+  }
+  const h = writable({
+    ...specification,
+    highlight_keys: ["voltage", "removed", "ports"],
+  })
+  expect(
+    (await h.service.writeSpecification(input(), h.context)).after
+      .highlight_keys
+  ).toEqual(["voltage", "ports"])
+})
+test("rejects unknown highlights before creating any revision", async () => {
+  const h = writable()
+  await expect(
+    h.service.writeSpecification(
+      input({ highlight_keys: ["unknown"] }),
+      h.context
+    )
+  ).rejects.toThrow("Choose up to six")
+  expect(h.execute.mock.calls.some(([sql]) => sql.startsWith("insert"))).toBe(
+    false
+  )
+})
+
+test("compensation restores the previous highlight selection with its immutable values", async () => {
+  const after = {
+    ...specification,
+    version: 8,
+    revision_id: "psrev_eight",
+    highlight_keys: ["voltage"],
+  }
+  const h = writable(after)
+  await h.service.restoreSpecification(
+    {
+      before: { ...specification, highlight_keys: ["ports"] },
+      after,
+      created_variants: [],
+    },
+    h.context
+  )
+  const insert = h.execute.mock.calls.find(([sql]) =>
+    sql.startsWith("insert into product_specification_revision")
+  )!
+  expect(insert[1][6]).toBe(JSON.stringify(["ports"]))
 })

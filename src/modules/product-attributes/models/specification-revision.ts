@@ -8,6 +8,7 @@ export default model
       mappedBy: "revisions",
     }),
     groups: model.json(),
+    highlight_keys: model.json().nullable(),
     version: model.number(),
     values: model.json(),
     variants: model.json(),

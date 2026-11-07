@@ -582,3 +582,28 @@ it("does not treat another revision of an archived group as an existing pin", as
     )
   ).rejects.toThrow("Archived groups")
 })
+
+it("plans highlight-only writes with the same optimistic version and unchanged native values", async () => {
+  const h = harness()
+  const plan = (
+    await prepareAttributesMutation(
+      {
+        product_id: h.product.id,
+        highlights: { version: "psrev_1", highlight_keys: ["model"] },
+      },
+      h
+    )
+  ).output
+  expect(plan.highlight_keys).toEqual(["model"])
+  expect(plan.values).toEqual(h.specification!.values)
+  expect(plan.variants).toEqual(h.specification!.variants)
+  await expect(
+    prepareAttributesMutation(
+      {
+        product_id: h.product.id,
+        highlights: { version: "stale", highlight_keys: [] },
+      },
+      h
+    )
+  ).rejects.toThrow("Reload")
+})

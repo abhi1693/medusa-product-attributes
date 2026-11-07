@@ -1,6 +1,7 @@
 import type {
   ProductAttributes,
   ProductValuesInput,
+  ProductHighlightsInput,
   StoreProductAttributes,
   GroupAssignmentInput,
   TemplateInput,
@@ -81,6 +82,11 @@ export const createProductAttributesClient = (
       }),
     saveValues: (id: string, body: ProductValuesInput) =>
       transport.fetch<ProductAttributes>(`${productPath(id)}/values`, {
+        method: "POST",
+        body,
+      }),
+    saveHighlights: (id: string, body: ProductHighlightsInput) =>
+      transport.fetch<ProductAttributes>(`${productPath(id)}/highlights`, {
         method: "POST",
         body,
       }),

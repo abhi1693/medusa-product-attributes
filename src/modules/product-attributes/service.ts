@@ -1,3 +1,4 @@
+import { validateHighlightKeys } from "../../highlights"
 import { randomUUID } from "node:crypto"
 import type { Context } from "@medusajs/framework/types"
 import type { EntityManager } from "@medusajs/framework/mikro-orm/knex"
@@ -64,7 +65,7 @@ export default class ProductAttributesService extends MedusaService({
   ): Promise<OwnedSpecification | null> {
     const manager = context!.transactionManager || context!.manager!
     const [record] = await manager.execute<OwnedSpecification[]>(
-      `select s.id,s.product_id,r.groups,s.version,s.linked,r.id as revision_id,r.values,r.variants from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.product_id=? and s.deleted_at is null${includeUnlinked ? "" : " and s.linked=true"}`,
+      `select s.id,s.product_id,r.groups,s.version,s.linked,r.id as revision_id,r.values,r.variants,r.highlight_keys from product_specification s join product_specification_revision r on r.id=s.current_revision_id where s.product_id=? and s.deleted_at is null${includeUnlinked ? "" : " and s.linked=true"}`,
       [productId]
     )
     return record || null
@@ -114,6 +115,14 @@ export default class ProductAttributesService extends MedusaService({
     const fields = groups.flatMap((group) => group.fields)
     if (new Set(fields.map((field) => field.key)).size !== fields.length)
       invalid("Groups contain duplicate field keys")
+    const highlightKeys = validateHighlightKeys(
+      input.highlight_keys === undefined
+        ? (before?.highlight_keys?.filter((key) =>
+            fields.some((field) => field.key === key)
+          ) ?? null)
+        : input.highlight_keys,
+      fields
+    )
     const issues = [
       ...validateValues(fields, input.values, "product", input.complete),
       ...Object.entries(input.variants).flatMap(([id, values]) =>
@@ -139,7 +148,7 @@ export default class ProductAttributesService extends MedusaService({
         [id, input.product_id, version]
       )
     await manager.execute(
-      'insert into product_specification_revision(id,specification_id,groups,version,"values",variants,actor_id) values(?,?,?::jsonb,?,?::jsonb,?::jsonb,?)',
+      'insert into product_specification_revision(id,specification_id,groups,version,"values",variants,actor_id,highlight_keys) values(?,?,?::jsonb,?,?::jsonb,?::jsonb,?,?::jsonb)',
       [
         revisionId,
         id,
@@ -148,6 +157,7 @@ export default class ProductAttributesService extends MedusaService({
         JSON.stringify(input.values),
         JSON.stringify(input.variants),
         input.actor_id,
+        highlightKeys === null ? null : JSON.stringify(highlightKeys),
       ]
     )
     await manager.execute(
@@ -180,6 +190,7 @@ export default class ProductAttributesService extends MedusaService({
         id,
         product_id: input.product_id,
         groups: input.groups,
+        highlight_keys: highlightKeys,
         version,
         revision_id: revisionId,
         values: input.values,
@@ -229,7 +240,7 @@ export default class ProductAttributesService extends MedusaService({
     if (receipt.before) {
       const version = current.version + 1
       await manager.execute(
-        "insert into product_specification_revision(id,specification_id,groups,version,\"values\",variants,actor_id) values(?,?,?::jsonb,?,?::jsonb,?::jsonb,'system:compensation')",
+        "insert into product_specification_revision(id,specification_id,groups,version,\"values\",variants,actor_id,highlight_keys) values(?,?,?::jsonb,?,?::jsonb,?::jsonb,'system:compensation',?::jsonb)",
         [
           compensationId,
           current.id,
@@ -237,6 +248,9 @@ export default class ProductAttributesService extends MedusaService({
           version,
           JSON.stringify(receipt.before.values),
           JSON.stringify(receipt.before.variants),
+          receipt.before.highlight_keys == null
+            ? null
+            : JSON.stringify(receipt.before.highlight_keys),
         ]
       )
       await manager.execute(

@@ -23,6 +23,7 @@ import {
   getTemplate,
   listTemplates,
   saveProductValues,
+  saveProductHighlights,
   saveTemplate,
   storeProduct,
 } from "../../src/api/handlers"
@@ -733,6 +734,8 @@ describe("Store visibility boundary", () => {
     })
     expect(response.json).toHaveBeenCalledWith({
       product_id: "prod_switch",
+      highlight_keys: ["ports"],
+      highlights: revision.fields,
       groups: [
         {
           key: revision.key,
@@ -1068,6 +1071,7 @@ test("mutations require reads and metadata export requires its own grant", async
     deleteTemplate,
     assignProductGroups,
     saveProductValues,
+    saveProductHighlights,
     exportProductMetadata,
   ]) {
     const { request, response, service } = fixture({ body: { version: 2 } })
@@ -1114,3 +1118,60 @@ test("mutations require reads and metadata export requires its own grant", async
     false
   )
 })
+
+test("highlights writes require read/write grants and preserve the supplied version/order", async () => {
+  const { request, response, service } = fixture({
+    body: { version: "current", highlight_keys: ["ports"] },
+  })
+  await saveProductHighlights(request as any, response as any)
+  expect(workflows.mutateProductAttributes).toHaveBeenCalledWith(
+    request.scope,
+    {
+      product_id: "prod_switch",
+      highlights: { version: "current", highlight_keys: ["ports"] },
+    },
+    true,
+    "user_admin",
+    true
+  )
+  service.configuration.authorize = async (_req, context: any) =>
+    context.action !== "values.write"
+  await expect(
+    saveProductHighlights(request as any, response as any)
+  ).rejects.toThrow()
+})
+test.each([
+  {},
+  { version: "v", highlight_keys: ["bad-key"] },
+  { version: "v", highlight_keys: Array(7).fill("ports") },
+  { version: "v", highlight_keys: [], extra: true },
+])("rejects malformed highlights requests", async (body) => {
+  const { request, response } = fixture({ body })
+  await expect(
+    saveProductHighlights(request as any, response as any)
+  ).rejects.toThrow()
+  expect(workflows.mutateProductAttributes).not.toHaveBeenCalled()
+})
+test("exports the dedicated highlights route", async () => {
+  expect(
+    (
+      await import("../../src/api/admin/product-attributes/products/[id]/highlights/route.js")
+    ).POST
+  ).toBe(saveProductHighlights)
+})
+
+test.each([[null], [[]], [["ports"]]])(
+  "public highlights resolves default/null separately from explicit none: %j",
+  async (selection) => {
+    const { request, response } = fixture()
+    const state = await workflows.productState()
+    state.specification.highlight_keys = selection
+    workflows.productState.mockResolvedValue(state)
+    await storeProduct(request as any, response as any)
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        highlights: selection?.length === 0 ? [] : revision.fields,
+      })
+    )
+  }
+)
