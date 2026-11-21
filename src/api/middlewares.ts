@@ -5,7 +5,11 @@ import { protectPrivateSpecificationRelations } from "./private-relations"
 export default defineMiddlewares({
   routes: [
     {
-      matcher: /^\/(?:admin|store)(?:\/|$)/i,
+      matcher: "/admin",
+      middlewares: [protectPrivateSpecificationRelations],
+    },
+    {
+      matcher: "/store",
       middlewares: [protectPrivateSpecificationRelations],
     },
     {

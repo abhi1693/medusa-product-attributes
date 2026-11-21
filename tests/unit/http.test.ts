@@ -1006,7 +1006,11 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
   expect(exportRoute.POST).toBe(exportProductMetadata)
   expect(middleware.routes).toEqual([
     expect.objectContaining({
-      matcher: expect.any(RegExp),
+      matcher: "/admin",
+      middlewares: [protectPrivateSpecificationRelations],
+    }),
+    expect.objectContaining({
+      matcher: "/store",
       middlewares: [protectPrivateSpecificationRelations],
     }),
     expect.objectContaining({
@@ -1015,16 +1019,7 @@ test("public HTTP routes bind the supported Admin and Store handlers", async () 
       middlewares: [validateNativeProductPublication],
     }),
   ])
-  const globalMatcher = middleware.routes![0].matcher as RegExp
-  for (const path of [
-    "/admin/products",
-    "/store/products",
-    "/ADMIN/products",
-    "/STORE/products",
-  ])
-    expect(globalMatcher.test(path)).toBe(true)
-  expect(globalMatcher.test("/auth/user/emailpass")).toBe(false)
-  const matcher = middleware.routes![1].matcher as RegExp
+  const matcher = middleware.routes![2].matcher as RegExp
   for (const path of ["/admin/products", "/admin/products/batch"])
     expect(matcher.test(path)).toBe(true)
   for (const path of [
