@@ -1,7 +1,7 @@
 # Medusa Product Attributes
 
 [![CI](https://github.com/abhi1693/medusa-product-attributes/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/abhi1693/medusa-product-attributes/actions/workflows/ci.yml)
-[![Medusa 2.22.2](https://img.shields.io/badge/Medusa-2.22.2-7c3aed)](https://docs.medusajs.com/)
+[![Medusa 2.23.0](https://img.shields.io/badge/Medusa-2.23.0-7c3aed)](https://docs.medusajs.com/)
 [![MIT license](https://img.shields.io/github/license/abhi1693/medusa-product-attributes)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-abhi1693-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/abhi1693)
 
@@ -27,7 +27,7 @@ Native Medusa fields remain authoritative for dimensions, weight, customs inform
 
 ## Install and configure
 
-Validated against Medusa **2.22.2**, UI **4.2.9**, Vite **7.3.7**, Node **24** and npm **11.19.0**. Node 22.22 or newer is required. The peer range permits compatible Medusa v2 versions; the pinned baseline is the tested one.
+The development build targets Medusa **2.23.0**, UI **4.3.0**, Vite **8.3.8**, Node **24** and npm **11.19.0**. Node 22.22 or newer is required. The peer range permits compatible Medusa v2 versions; the pinned baseline is the tested one.
 
 ```sh
 npm install @abhi1693/medusa-product-attributes@0.0.1

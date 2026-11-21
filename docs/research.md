@@ -81,3 +81,7 @@ native rollback isolation and delete/restore lifecycle. A real consuming Admin
 save/reload and storefront read verified selection/order; public specification
 values were unchanged from their pre-save snapshot. Browser verification used
 the assistant in-app browser. No package release is included.
+
+## Medusa 2.23.0 compatibility
+
+Reviewed 2026-11-21. The plugin CLI rebuilds the Admin extension with Vite 8.3.8, React 19.3.1 and UI 4.3.0. Both middleware matchers accept named route parameters in Express 5. Component refs use initial values. The Store eligibility, immutable revision and authorization contracts continue to use the existing plugin APIs. Verify package exports, the consuming host build and the native Admin drawers. [Release notes](https://github.com/medusajs/medusa/releases/tag/v2.23.0) · [Plugin build guide](https://docs.medusajs.com/learn/fundamentals/plugins/create)
